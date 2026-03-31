@@ -37,6 +37,14 @@
     "High momentum"
   ];
 
+  const PRIORITY_OPTIONS = [
+    "Money / Work",
+    "Family",
+    "Health",
+    "Peace / Reset",
+    "Growth"
+  ];
+
   const QUOTES = [
     "Peace is not the opposite of ambition. It is the condition that keeps ambition clean.",
     "Your future is usually built in the quiet hour nobody claps for.",
@@ -100,8 +108,97 @@
     "Your comeback can be quiet, immediate, and completely real."
   ];
 
+  const TASK_FEEDBACK_MESSAGES = [
+    "Good. Keep going.",
+    "Stack it.",
+    "That counts.",
+    "Keep moving."
+  ];
+
+  const WIN_REWARD_MESSAGES = [
+    "Another day stacked.",
+    "This is how momentum builds.",
+    "You showed up. That matters.",
+    "One more day in alignment."
+  ];
+
+  const CLARITY_STEPS = [
+    {
+      key: "goalTitle",
+      question: "What are you working toward?",
+      hint: "Name the main thing you want to move forward.",
+      placeholder: "Build my business, get financially stable, get back in shape",
+      type: "textarea"
+    },
+    {
+      key: "target",
+      question: "What does success look like?",
+      hint: "Describe the result in plain language.",
+      placeholder: "Consistent income, stronger health, a finished launch",
+      type: "textarea"
+    },
+    {
+      key: "timeline",
+      question: "When do you want this done by?",
+      hint: "Use simple timing, not exact dates unless you want to.",
+      placeholder: "End of this year, in 6 months, by July",
+      type: "textarea"
+    },
+    {
+      key: "baseline",
+      question: "Where are you right now?",
+      hint: "Start with the truth, not the ideal.",
+      placeholder: "Behind on savings, early in the business, rebuilding energy",
+      type: "textarea"
+    },
+    {
+      key: "gap",
+      question: "What's the biggest thing missing right now?",
+      hint: "This becomes what matters most right now inside the app.",
+      placeholder: "Consistency, leads, structure, confidence, rest",
+      type: "textarea"
+    },
+    {
+      key: "phaseName",
+      question: "What phase are you in right now?",
+      hint: "Pick the season that feels most true.",
+      type: "choice",
+      options: [
+        "Figuring it out",
+        "Building the foundation",
+        "Growing",
+        "Scaling"
+      ]
+    },
+    {
+      key: "phaseMilestone",
+      question: "What is the next milestone?",
+      hint: "Name the next meaningful checkpoint, not the final outcome.",
+      placeholder: "Launch the first offer, complete 4 workouts a week, save the first $1,000",
+      type: "textarea"
+    },
+    {
+      key: "phaseWhy",
+      question: "Why does this milestone matter?",
+      hint: "Optional, but useful when you want more context on the dashboard.",
+      placeholder: "Because it proves progress is real and gives me the next clear target",
+      type: "textarea"
+    },
+    {
+      key: "why",
+      question: "Why does this matter right now?",
+      hint: "Keep it human. Short is fine.",
+      placeholder: "I need stability, I want to show up for my family, I’m tired of drifting",
+      type: "textarea"
+    }
+  ];
+
   const appState = loadState();
   const todayKey = getTodayKey();
+  const flowState = {
+    onboardingStep: 0,
+    modalStep: 0
+  };
 
   const elements = {
     dailyOpeningScreen: document.getElementById("daily-opening-screen"),
@@ -110,10 +207,13 @@
     dailyQuote: document.getElementById("daily-quote"),
     stateOptions: document.getElementById("state-options"),
     openingFeedback: document.getElementById("opening-feedback"),
+    prioritySection: document.getElementById("priority-section"),
+    priorityOptions: document.getElementById("priority-options"),
+    skipPriorityBtn: document.getElementById("skip-priority-btn"),
     startDayBtn: document.getElementById("start-day-btn"),
+    resetAppBtn: document.getElementById("reset-app-btn"),
     profileForm: document.getElementById("profile-form"),
     profileModalForm: document.getElementById("profile-modal-form"),
-    profileFieldsTemplate: document.getElementById("profile-fields-template"),
     editProfileBtn: document.getElementById("edit-profile-btn"),
     openUpdateBtn: document.getElementById("open-update-btn"),
     lifeUpdateForm: document.getElementById("life-update-form"),
@@ -124,6 +224,7 @@
     missionList: document.getElementById("mission-list"),
     missionTitle: document.getElementById("mission-title"),
     missionSubtitle: document.getElementById("mission-subtitle"),
+    missionFeedback: document.getElementById("mission-feedback"),
     roadmapList: document.getElementById("roadmap-list"),
     reflectionText: document.getElementById("reflection-text"),
     saveReflectionBtn: document.getElementById("save-reflection-btn"),
@@ -135,6 +236,8 @@
     todayState: document.getElementById("today-state"),
     todayMode: document.getElementById("today-mode"),
     todaySummary: document.getElementById("today-summary"),
+    momentumStatus: document.getElementById("momentum-status"),
+    streakPill: document.getElementById("streak-pill"),
     goalCardTitle: document.getElementById("goal-card-title"),
     goalWhyText: document.getElementById("goal-why-text"),
     goalBaselineText: document.getElementById("goal-baseline-text"),
@@ -149,7 +252,9 @@
     totalWins: document.getElementById("total-wins"),
     historyPhase: document.getElementById("history-phase"),
     historyMode: document.getElementById("history-mode"),
-    winHistory: document.getElementById("win-history")
+    winHistory: document.getElementById("win-history"),
+    missionCard: document.getElementById("mission-card"),
+    winCard: document.getElementById("win-card")
   };
 
   init();
@@ -158,24 +263,32 @@
     ensureStateShape();
     seedDailyQuote();
     renderStateButtons();
+    renderPriorityOptions();
     renderEmotionOptions();
-    buildProfileModalForm();
     bindEvents();
     routeApp();
   }
 
   function ensureStateShape() {
-    appState.profile = appState.profile || createEmptyProfile();
+    appState.profile = {
+      ...createEmptyProfile(),
+      ...(appState.profile || {})
+    };
     appState.daily = appState.daily || {};
     appState.missions = appState.missions || {};
     appState.roadmap = appState.roadmap || [];
     appState.wins = appState.wins || {};
     appState.reflections = appState.reflections || {};
     appState.lifeUpdates = appState.lifeUpdates || [];
+    appState.performance = appState.performance || {};
     appState.meta = appState.meta || {};
     appState.streak = Number.isFinite(appState.streak) ? appState.streak : 0;
     appState.totalWins = Number.isFinite(appState.totalWins) ? appState.totalWins : 0;
     appState.lastWinDate = appState.lastWinDate || null;
+    appState.meta.onboardingCompleted = Boolean(
+      appState.meta.onboardingCompleted || hasMeaningfulProfileData(appState.profile)
+    );
+    appState.meta.onboardingStep = clampStepIndex(appState.meta.onboardingStep || 0);
     saveState();
   }
 
@@ -185,6 +298,7 @@
       why: "",
       baseline: "",
       target: "",
+      gap: "",
       timeline: "",
       phaseName: "",
       phaseFocus: "",
@@ -213,7 +327,7 @@
   }
 
   function routeApp() {
-    const hasProfile = Boolean(appState.profile.goalTitle && appState.profile.goalTitle.trim());
+    const hasProfile = hasCompletedProfile();
     const completedOpening = Boolean(appState.daily[todayKey]?.state);
 
     showScreen(completedOpening ? (hasProfile ? "dashboard" : "onboarding") : "opening");
@@ -225,6 +339,8 @@
       renderOpeningState();
     } else {
       fillProfileForms();
+      flowState.onboardingStep = clampStepIndex(appState.meta.onboardingStep || 0);
+      renderClarityFlow("onboarding");
     }
   }
 
@@ -258,31 +374,34 @@
     const today = appState.daily[todayKey];
     if (!today?.state) {
       elements.openingFeedback.classList.add("hidden");
+      elements.prioritySection.classList.add("hidden");
       elements.startDayBtn.classList.add("hidden");
       return;
     }
 
     selectButton(elements.stateOptions, today.state);
+    selectButton(elements.priorityOptions, today.priority || "");
     elements.openingFeedback.textContent = STATE_RESPONSES[today.state];
     elements.openingFeedback.classList.remove("hidden");
+    elements.prioritySection.classList.remove("hidden");
     elements.startDayBtn.classList.remove("hidden");
   }
 
   function selectDailyState(stateLabel) {
     const mode = STATE_TO_MODE[stateLabel];
+    const priority = appState.daily[todayKey]?.priority || "";
     appState.daily[todayKey] = {
       date: todayKey,
       state: stateLabel,
       mode,
+      priority,
       coachResponse: STATE_RESPONSES[stateLabel],
       updatedAt: new Date().toISOString()
     };
     saveState();
 
     selectButton(elements.stateOptions, stateLabel);
-    elements.openingFeedback.textContent = STATE_RESPONSES[stateLabel];
-    elements.openingFeedback.classList.remove("hidden");
-    elements.startDayBtn.classList.remove("hidden");
+    renderOpeningState();
   }
 
   function selectButton(container, selectedState) {
@@ -291,43 +410,85 @@
     });
   }
 
-  function buildProfileModalForm() {
-    elements.profileModalForm.innerHTML = "";
-    const content = elements.profileFieldsTemplate.content.cloneNode(true);
-    elements.profileModalForm.appendChild(content);
+  function renderPriorityOptions() {
+    elements.priorityOptions.innerHTML = "";
+    PRIORITY_OPTIONS.forEach((priority) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "state-btn priority-btn";
+      button.dataset.state = priority;
+      button.innerHTML = `<strong>${priority}</strong><span>${getPriorityDescription(priority)}</span>`;
+      button.addEventListener("click", () => selectDailyPriority(priority));
+      elements.priorityOptions.appendChild(button);
+    });
+  }
+
+  function selectDailyPriority(priority) {
+    if (!appState.daily[todayKey]) {
+      return;
+    }
+
+    appState.daily[todayKey].priority = priority;
+    appState.daily[todayKey].updatedAt = new Date().toISOString();
+    saveState();
+    selectButton(elements.priorityOptions, priority);
+  }
+
+  function clearDailyPriority() {
+    if (!appState.daily[todayKey]) {
+      return;
+    }
+
+    appState.daily[todayKey].priority = "";
+    appState.daily[todayKey].updatedAt = new Date().toISOString();
+    saveState();
+    selectButton(elements.priorityOptions, "");
+  }
+
+  function getPriorityDescription(priority) {
+    const descriptions = {
+      "Money / Work": "Create traction where output and income matter most.",
+      Family: "Protect connection, presence, and your people.",
+      Health: "Support your body, energy, and recovery.",
+      "Peace / Reset": "Lower the noise and reset your nervous system.",
+      Growth: "Learn, practice, and become more capable."
+    };
+    return descriptions[priority];
+  }
+
+  function hasMeaningfulProfileData(profile) {
+    return Boolean(profile.goalTitle || profile.target || profile.baseline || profile.gap || profile.phaseName || profile.why);
+  }
+
+  function hasCompletedProfile() {
+    return Boolean(appState.meta.onboardingCompleted || hasMeaningfulProfileData(appState.profile));
+  }
+
+  function clampStepIndex(index) {
+    return Math.min(Math.max(index, 0), CLARITY_STEPS.length - 1);
   }
 
   function bindEvents() {
     elements.startDayBtn.addEventListener("click", () => {
-      const hasProfile = Boolean(appState.profile.goalTitle && appState.profile.goalTitle.trim());
-      if (hasProfile) {
+      if (hasCompletedProfile()) {
         ensureMissionForToday();
         renderDashboard();
         showScreen("dashboard");
-      } else {
-        fillProfileForms();
-        showScreen("onboarding");
+        return;
       }
+
+      fillProfileForms();
+      showScreen("onboarding");
+      renderClarityFlow("onboarding");
     });
 
-    elements.profileForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      saveProfileFromForm(event.currentTarget);
-      ensureMissionForToday(true);
-      renderDashboard();
-      showScreen("dashboard");
-    });
-
-    elements.profileModalForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      saveProfileFromForm(event.currentTarget);
-      ensureMissionForToday(true);
-      renderDashboard();
-      closeModal("profile-modal");
-    });
+    elements.skipPriorityBtn.addEventListener("click", clearDailyPriority);
+    elements.resetAppBtn.addEventListener("click", resetAppState);
 
     elements.editProfileBtn.addEventListener("click", () => {
       fillProfileForms();
+      flowState.modalStep = 0;
+      renderClarityFlow("modal");
       openModal("profile-modal");
     });
 
@@ -363,33 +524,182 @@
   }
 
   function fillProfileForms() {
-    populateForm(elements.profileForm, appState.profile);
-    populateForm(elements.profileModalForm, appState.profile);
+    flowState.onboardingStep = clampStepIndex(appState.meta.onboardingStep || 0);
+    renderClarityFlow("onboarding");
+    renderClarityFlow("modal");
   }
 
-  function populateForm(form, values) {
-    if (!form) {
+  function renderClarityFlow(surface) {
+    const container = surface === "modal" ? elements.profileModalForm : elements.profileForm;
+    const stepIndex = surface === "modal" ? flowState.modalStep : flowState.onboardingStep;
+    const step = CLARITY_STEPS[stepIndex];
+    const value = getFlowValue(step.key);
+    const isLast = stepIndex === CLARITY_STEPS.length - 1;
+
+    container.innerHTML = `
+      <article class="clarity-step" data-surface="${surface}">
+        <div class="clarity-progress">
+          <span class="eyebrow">Step ${stepIndex + 1} of ${CLARITY_STEPS.length}</span>
+          <div class="clarity-progress-bar"><span style="width: ${((stepIndex + 1) / CLARITY_STEPS.length) * 100}%"></span></div>
+        </div>
+        <div class="clarity-copy">
+          <h2>${step.question}</h2>
+          <p class="muted">${step.hint}</p>
+        </div>
+        ${renderClarityField(step, value, surface)}
+        <div class="clarity-actions">
+          <button class="btn btn-ghost" type="button" data-flow-skip="${surface}">Skip</button>
+          <div class="clarity-action-main">
+            ${stepIndex > 0 ? `<button class="btn btn-secondary" type="button" data-flow-back="${surface}">Back</button>` : ""}
+            <button class="btn btn-primary btn-large" type="button" data-flow-next="${surface}">${isLast ? (surface === "modal" ? "Save Changes" : "Open Dashboard") : "Next"}</button>
+          </div>
+        </div>
+      </article>
+    `;
+
+    const field = container.querySelector("[data-flow-field]");
+    if (field) {
+      field.addEventListener("input", () => persistClarityAnswer(step, readStepValue(step, container)));
+      field.addEventListener("change", () => persistClarityAnswer(step, readStepValue(step, container)));
+      const surfaceVisible = surface === "modal"
+        ? !document.getElementById("profile-modal")?.classList.contains("hidden")
+        : !elements.onboardingScreen.classList.contains("hidden");
+      if (surfaceVisible) {
+        window.requestAnimationFrame(() => field.focus());
+      }
+    }
+
+    container.querySelectorAll("[data-choice]").forEach((button) => {
+      button.addEventListener("click", () => {
+        persistClarityAnswer(step, button.dataset.choice);
+        renderClarityFlow(surface);
+      });
+    });
+
+    container.querySelector(`[data-flow-skip="${surface}"]`).addEventListener("click", () => {
+      persistClarityAnswer(step, "");
+      moveClarityFlow(surface, 1);
+    });
+    container.querySelector(`[data-flow-next="${surface}"]`).addEventListener("click", () => {
+      persistClarityAnswer(step, readStepValue(step, container));
+      moveClarityFlow(surface, 1);
+    });
+    const backButton = container.querySelector(`[data-flow-back="${surface}"]`);
+    if (backButton) {
+      backButton.addEventListener("click", () => moveClarityFlow(surface, -1));
+    }
+  }
+
+  function renderClarityField(step, value, surface) {
+    if (step.type === "choice") {
+      return `
+        <div class="clarity-choice-grid">
+          ${step.options
+            .map((option) => `
+              <button class="state-btn clarity-choice ${value === option ? "active" : ""}" data-choice="${option}" data-state="${option}" type="button">
+                <strong>${option}</strong>
+              </button>
+            `)
+            .join("")}
+        </div>
+      `;
+    }
+
+    const fieldId = `${surface}-${step.key}`;
+    return `
+      <div class="field-group">
+        <label for="${fieldId}" class="sr-only">${step.question}</label>
+        <textarea id="${fieldId}" data-flow-field="true" rows="5" maxlength="220" placeholder="${step.placeholder || ""}">${escapeHtml(value)}</textarea>
+      </div>
+    `;
+  }
+
+  function readStepValue(step, container) {
+    if (step.type === "choice") {
+      return getFlowValue(step.key);
+    }
+    return (container.querySelector("[data-flow-field]")?.value || "").trim();
+  }
+
+  function getFlowValue(key) {
+    if (key === "gap") {
+      return appState.profile.gap || appState.profile.phaseFocus || "";
+    }
+    return appState.profile[key] || "";
+  }
+
+  function persistClarityAnswer(step, value) {
+    const cleaned = (value || "").toString().trim();
+    if (step.key === "gap") {
+      appState.profile.gap = cleaned;
+      appState.profile.phaseFocus = cleaned;
+    } else if (step.key === "why") {
+      appState.profile.why = cleaned;
+      if (!appState.profile.phaseWhy) {
+        appState.profile.phaseWhy = cleaned;
+      }
+    } else {
+      appState.profile[step.key] = cleaned;
+    }
+
+    syncDerivedProfileFields();
+    saveState();
+  }
+
+  function syncDerivedProfileFields() {
+    if (!appState.profile.phaseFocus && appState.profile.gap) {
+      appState.profile.phaseFocus = appState.profile.gap;
+    }
+    if (!appState.profile.gap && appState.profile.phaseFocus) {
+      appState.profile.gap = appState.profile.phaseFocus;
+    }
+    if (!appState.profile.phaseWhy && appState.profile.why) {
+      appState.profile.phaseWhy = appState.profile.why;
+    }
+  }
+
+  function moveClarityFlow(surface, direction) {
+    const key = surface === "modal" ? "modalStep" : "onboardingStep";
+    const current = flowState[key];
+    const nextStep = current + direction;
+
+    if (nextStep < 0) {
+      flowState[key] = 0;
+      renderClarityFlow(surface);
       return;
     }
 
-    Object.keys(createEmptyProfile()).forEach((key) => {
-      const field = form.elements.namedItem(key);
-      if (field) {
-        field.value = values[key] || "";
+    if (nextStep >= CLARITY_STEPS.length) {
+      appState.meta.onboardingCompleted = true;
+      appState.meta.onboardingStep = CLARITY_STEPS.length - 1;
+      syncRoadmap();
+      saveState();
+      ensureMissionForToday(true);
+      renderDashboard();
+      if (surface === "modal") {
+        closeModal("profile-modal");
+      } else {
+        showScreen("dashboard");
       }
-    });
+      return;
+    }
+
+    flowState[key] = nextStep;
+    if (surface === "onboarding") {
+      appState.meta.onboardingStep = nextStep;
+      saveState();
+    }
+    renderClarityFlow(surface);
   }
 
-  function saveProfileFromForm(form) {
-    const data = new FormData(form);
-    const nextProfile = createEmptyProfile();
-    Object.keys(nextProfile).forEach((key) => {
-      nextProfile[key] = (data.get(key) || "").toString().trim();
-    });
+  function resetAppState() {
+    const confirmed = window.confirm("Reset the app and clear all saved progress?");
+    if (!confirmed) {
+      return;
+    }
 
-    appState.profile = nextProfile;
-    syncRoadmap();
-    saveState();
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.reload();
   }
 
   function syncRoadmap() {
@@ -447,268 +757,475 @@
     }
 
     const context = getTodayContext();
-    const items = generateMissionItems(context);
+    const plan = generateMissionPlan(context);
     appState.missions[todayKey] = {
-      title: getMissionTitle(context.daily.mode, context.latestUpdate),
-      subtitle: getMissionSubtitle(context),
-      items,
+      title: plan.title,
+      subtitle: plan.subtitle,
+      loadLevel: plan.loadLevel,
+      items: plan.items,
       generatedAt: new Date().toISOString()
     };
+    syncDailyPerformanceFromMission();
     saveState();
   }
 
-  function generateMissionItems(context) {
-    const { profile, daily, latestUpdate, lowInfo } = context;
-    const items = [];
-    const workload = getModeWorkload(daily.mode, latestUpdate);
+  function generateMissionPlan(context) {
+    const { daily } = context;
+    const focus = buildFocusLine(context);
+    const loadProfile = getAdaptiveLoadProfile(context);
+    const tasks = buildMissionTasks(context, loadProfile);
 
-    const goalStep = buildGoalSpecificAction(profile, daily.mode, latestUpdate, lowInfo);
-    const physical = buildPhysicalAction(profile, daily.mode, latestUpdate);
-    const workFinancial = buildWorkAction(profile, daily.mode, latestUpdate);
-    const family = buildFamilyAction(profile, daily.mode, latestUpdate);
-    const spiritual = buildSpiritualAction(profile, daily.mode, latestUpdate);
-    const reflection = buildReflectionAction(daily.mode);
-
-    const ranked = [goalStep, physical, workFinancial, family, spiritual, reflection].filter(Boolean);
-    const prioritized = applyLifeUpdatePriority(ranked, latestUpdate);
-
-    prioritized.slice(0, workload).forEach((item, index) => {
-      items.push({
+    return {
+      title: getMissionTitle(context),
+      subtitle: `Today's focus: ${focus}`,
+      loadLevel: loadProfile.level,
+      items: tasks.map((item, index) => ({
         id: `${todayKey}-${index + 1}`,
         text: item.text,
         category: item.category,
-        completed: false
-      });
+        completed: false,
+        role: item.role
+      }))
+    };
+  }
+
+  function getAdaptiveLoadProfile(context) {
+    // Use recent completion and win history to gently raise or lower mission volume.
+    const history = getRecentPerformanceSnapshot();
+    const mode = context.daily.mode;
+    let level = "Standard";
+
+    if (mode === "protect" || mode === "recovery") {
+      level = "Light";
+    } else if (mode === "attack" && history.winRate >= 0.66 && history.completionRate >= 0.8) {
+      level = history.strongDays >= 3 ? "Peak" : "Heavy";
+    } else if ((mode === "progress" || mode === "stability") && history.completionRate >= 0.7) {
+      level = "Heavy";
+    }
+
+    if (history.completionRate <= 0.45 || history.winRate <= 0.34) {
+      level = level === "Peak" ? "Heavy" : "Light";
+    }
+    if (mode === "attack" && history.strongDays >= 4 && history.completionRate >= 0.85) {
+      level = "Peak";
+    }
+
+    const profileByLevel = {
+      Light: { level: "Light", count: 3, includeReset: true },
+      Standard: { level: "Standard", count: 4, includeReset: mode === "protect" || mode === "recovery" },
+      Heavy: { level: "Heavy", count: 5, includeReset: true },
+      Peak: { level: "Peak", count: 6, includeReset: true }
+    };
+
+    return profileByLevel[level];
+  }
+
+  function buildFocusLine(context) {
+    const { daily, latestUpdate } = context;
+    const priority = daily.priority || getFallbackPriority(context);
+
+    const focusByPriority = {
+      "Money / Work": "Push the right work forward",
+      Family: "Be present at home and handle what matters",
+      Health: "Take care of your body and keep moving",
+      "Peace / Reset": "Protect your peace and keep moving",
+      Growth: "Build momentum without chaos"
+    };
+
+    let focus = focusByPriority[priority] || "Keep the day clear and useful";
+    if (latestUpdate?.eventType === "Family crisis") {
+      focus = "Be steady at home and handle what matters";
+    } else if (latestUpdate?.eventType === "Health issue") {
+      focus = "Protect your body and keep the day simple";
+    } else if (latestUpdate?.eventType === "New opportunity") {
+      focus = "Turn momentum into action";
+    }
+
+    return `${focus}.`;
+  }
+
+  function buildMissionTasks(context, loadProfile) {
+    const { daily, latestUpdate } = context;
+    const priority = daily.priority || getFallbackPriority(context);
+    const milestoneContext = getMilestoneContext(context);
+    // Keep mission construction balanced, but let the current milestone dominate the day.
+    const mainMove = buildGoalTask(context, milestoneContext);
+    const milestoneMoves = buildMilestoneSupportTasks(context, milestoneContext);
+    const categoryMoves = buildPriorityTasks(priority, context, milestoneContext);
+    const recoveryMove = shouldIncludeResetMove(daily.mode, loadProfile) ? buildResetTask(context) : null;
+    const closingMove = buildClosingTask(context);
+    const optionalConnection = buildConnectionTask(context);
+    const outsideSupport = getOutsideSupportTask({
+      milestoneContext,
+      recoveryMove,
+      optionalConnection,
+      closingMove
     });
 
-    return items;
+    const tasks = [
+      { ...mainMove, role: "main" },
+      ...milestoneMoves.map((task) => ({ ...task, role: "support" })),
+      ...categoryMoves.map((task) => ({ ...task, role: "support" })),
+      outsideSupport ? { ...outsideSupport, role: outsideSupport.category === "reset" ? "reset" : "support" } : null
+    ].filter(Boolean);
+
+    return dedupeMissionTasks(applyMissionBonuses(tasks, latestUpdate)).slice(0, loadProfile.count);
   }
 
-  function getModeWorkload(mode, latestUpdate) {
-    let count = 4;
-    if (mode === "attack") {
-      count = 5;
-    } else if (mode === "protect" || mode === "recovery") {
-      count = 3;
+  function buildGoalTask(context, milestoneContext) {
+    const { daily } = context;
+    const milestoneTask = buildMilestoneMainTask(milestoneContext, daily.mode);
+    if (milestoneTask) {
+      return { category: milestoneContext.category, text: milestoneTask };
     }
 
-    if (latestUpdate?.emotions?.includes("Burned out")) {
-      count = Math.max(3, count - 1);
-    }
-    if (latestUpdate?.emotions?.includes("High momentum")) {
-      count = Math.min(5, count + 1);
-    }
-    return count;
-  }
-
-  function buildGoalSpecificAction(profile, mode, latestUpdate, lowInfo) {
-    if (lowInfo) {
-      const actionByMode = {
-        attack: "Do one hard thing for your goal before the day gets noisy.",
-        progress: "Give your main goal a focused 45-minute block.",
-        stability: "Spend 30 minutes on the next obvious step for your goal.",
-        protect: "Touch your goal for 15 minutes so the line stays alive.",
-        recovery: "Do the smallest version of your goal work for 10 minutes."
-      };
-      return { category: "goal", text: actionByMode[mode] };
-    }
-
-    const goal = profile.goalTitle;
-    const phaseFocus = profile.phaseFocus || "the current phase";
-    let text = `Move ${goal} forward with a focused block on ${phaseFocus}.`;
-
-    if (mode === "attack") {
-      text = `Take one stretch step on ${goal} and make visible progress on ${phaseFocus}.`;
-    } else if (mode === "protect") {
-      text = `Protect continuity by handling the single most important step for ${goal}.`;
-    } else if (mode === "recovery") {
-      text = `Keep ${goal} alive with a low-friction step tied to ${phaseFocus}.`;
-    }
-
-    if (latestUpdate?.eventType === "New opportunity") {
-      text = `Capitalize on the new opportunity by taking the clearest next step for ${goal}.`;
-    }
-    if (latestUpdate?.eventType === "Financial change") {
-      text = `Re-align ${goal} with your new financial reality and act on the most practical next step.`;
-    }
-
-    return { category: "goal", text };
-  }
-
-  function buildPhysicalAction(profile, mode, latestUpdate) {
-    const note = profile.physicalNotes;
-    if (latestUpdate?.eventType === "Health issue") {
-      return { category: "physical", text: "Choose recovery: hydrate, move gently, and avoid any unnecessary physical intensity today." };
-    }
-
-    if (note) {
-      if (mode === "attack") {
-        return { category: "physical", text: "Use your body as leverage today: honor your physical priority and push one level deeper with control." };
-      }
-      if (mode === "recovery") {
-        return { category: "physical", text: "Respect your physical state. Keep movement light and do the recovery actions your body needs." };
-      }
-      return { category: "physical", text: "Support your physical situation today with intentional movement, water, and a cleaner energy baseline." };
-    }
-
-    const defaults = {
-      attack: "Train or move your body hard enough to feel switched on.",
-      progress: "Move your body for at least 30 minutes and drink water early.",
-      stability: "Get some movement in and keep your basics clean.",
-      protect: "Take a walk, breathe deeper, and keep your body from absorbing extra stress.",
-      recovery: "Hydrate, stretch, and choose gentle movement over intensity."
+    const byMode = {
+      attack: "Spend 60 focused minutes on your top task before lunch.",
+      progress: "Finish one clear task in a 45-minute work block.",
+      stability: "Complete one useful task in a 30-minute block.",
+      protect: "Spend 20 minutes on the one task that cannot slip.",
+      recovery: "Do one 10-minute task to keep the day moving."
     };
-    return { category: "physical", text: defaults[mode] };
+
+    return { category: "goal", text: byMode[daily.mode] };
   }
 
-  function buildWorkAction(profile, mode, latestUpdate) {
-    const financial = profile.financialNotes;
-    const obstacle = profile.obstacles;
+  function buildPriorityTasks(priority, context, milestoneContext) {
+    const { daily, profile, latestUpdate } = context;
+    const mode = daily.mode;
 
-    if (latestUpdate?.eventType === "Work stress") {
-      return { category: "financial/work", text: "Reduce pressure. Finish the most essential work item and skip any non-critical extra load." };
-    }
-
-    if (latestUpdate?.eventType === "Financial change") {
-      return { category: "financial/work", text: "Review your money or work reality and make one grounded decision that improves stability." };
-    }
-
-    if (financial) {
-      return {
-        category: "financial/work",
-        text: mode === "attack"
-          ? "Take a direct action that improves income, savings, or work leverage today."
-          : "Do one practical move that strengthens your financial or work position."
-      };
-    }
-
-    if (obstacle) {
-      return { category: "financial/work", text: "Do one focused block on the work that usually gets delayed by your biggest obstacle." };
-    }
-
-    const defaults = {
-      attack: "Do one hard focused block of work without checking distractions.",
-      progress: "Focus for 45 minutes on meaningful work.",
-      stability: "Protect one clean block for useful work.",
-      protect: "Handle only the essential work that keeps life stable.",
-      recovery: "Answer the one work task that matters most and leave the rest alone."
+    const taskMap = {
+      "Money / Work": [
+        mode === "attack" ? "Make 3 outreach attempts before lunch." : "Send 1 message that moves work forward.",
+        mode === "recovery" ? "Handle the one task that makes tomorrow easier." : "Review your budget or pipeline for 15 minutes tonight.",
+        profile.obstacles ? "Remove one blocker before your next work block." : "Work phone-free for 30 minutes."
+      ],
+      Family: [
+        "Spend 20 phone-free minutes with family tonight.",
+        "Send one clear check-in message before dinner.",
+        mode === "attack" ? "Take a 10-minute walk before going home." : "Clean one small area that makes home lighter."
+      ],
+      Health: [
+        latestUpdate?.eventType === "Health issue" ? "Take your main recovery step before noon." : healthPrimaryTaskByMode(mode),
+        "Drink water steadily until you hit your goal today.",
+        mode === "recovery" ? "Stretch or breathe for 10 quiet minutes." : "Prep one healthy meal or snack tonight."
+      ],
+      "Peace / Reset": [
+        "Take 10 quiet minutes without your phone.",
+        "Clean one area that lowers stress at home.",
+        mode === "attack" ? "Take a 10-minute reset between work blocks." : "Skip one task that adds unnecessary stress."
+      ],
+      Growth: [
+        "Write tomorrow's top 3 priorities before bed.",
+        profile.gap ? "Write down one thing that made today harder than it should have." : "Write down one thing that slowed you down today.",
+        mode === "attack" ? "Set tomorrow's first task before you stop working." : "Prep one thing tonight that makes tomorrow easier."
+      ]
     };
-    return { category: "financial/work", text: defaults[mode] };
+
+    const tasks = taskMap[priority].map((text) => ({ category: priority.toLowerCase(), text }));
+    if (!milestoneContext.text || milestoneContext.theme === "general") {
+      return tasks.slice(0, 1);
+    }
+
+    return tasks.filter((task) => task.category === milestoneContext.category).slice(0, 1);
   }
 
-  function buildFamilyAction(profile, mode, latestUpdate) {
+  function buildResetTask(context) {
+    const { daily } = context;
+    const byMode = {
+      attack: "Take a 10-minute reset between work blocks.",
+      progress: "Pause for 5 minutes before your next block.",
+      stability: "Write your next task before switching focus.",
+      protect: "Cut one non-essential task before noon.",
+      recovery: "Pick one promise and finish it today."
+    };
+    return { category: "reset", text: byMode[daily.mode] };
+  }
+
+  function shouldIncludeResetMove(mode, loadProfile) {
+    return loadProfile.includeReset || mode === "protect" || mode === "recovery";
+  }
+
+  function buildConnectionTask(context) {
+    const { daily, latestUpdate } = context;
     if (latestUpdate?.eventType === "Family crisis") {
-      return { category: "family", text: "Be fully present where your people need you. Reduce ambition today and stabilize the home front." };
+      return { category: "family", text: "Stay close and give clear updates." };
     }
-
-    if (profile.familyNotes) {
-      return { category: "family", text: "Make one intentional move that supports your family reality instead of hoping it works itself out." };
+    if (daily.priority === "Family") {
+      return null;
     }
-
-    if (mode === "attack") {
-      return { category: "family", text: "Send one clear message or have one grounded conversation that keeps your relationships clean." };
-    }
-    return { category: "family", text: "Connect with someone important so progress does not cost you connection." };
+    return { category: "connection", text: "Check in with one person who matters." };
   }
 
-  function buildSpiritualAction(profile, mode, latestUpdate) {
-    if (latestUpdate?.eventType === "Travel / vacation") {
-      return { category: "spiritual/community", text: "Stay in maintenance mode. Keep one grounding ritual so travel does not scatter your center." };
-    }
-
-    if (profile.spiritualNotes) {
-      return { category: "spiritual/community", text: "Take a few minutes for prayer, stillness, gratitude, or community contact that restores perspective." };
-    }
-
-    if (mode === "recovery" || mode === "protect") {
-      return { category: "spiritual/community", text: "Take five quiet minutes to breathe, reset, and remember what matters." };
-    }
-
-    return { category: "spiritual/community", text: "Create a moment of stillness so your effort stays rooted instead of frantic." };
-  }
-
-  function buildReflectionAction(mode) {
-    const prompts = {
-      attack: "Reflect tonight on what created momentum and what needs to be hit even harder tomorrow.",
-      progress: "Reflect tonight so a solid day becomes a repeatable pattern.",
-      stability: "Reflect tonight on what kept the day steady.",
-      protect: "Reflect tonight on what drained you and what helped you stay intact.",
-      recovery: "Reflect tonight with honesty and zero judgment. Survival counts."
+  function buildClosingTask(context) {
+    const { daily } = context;
+    const byMode = {
+      attack: "Write tomorrow's top 3 priorities before bed.",
+      progress: "Write down the one task to repeat tomorrow.",
+      stability: "Write down what kept the day steady.",
+      protect: "Write down what drained your energy today.",
+      recovery: "Write down one thing you finished today."
     };
-    return { category: "reflection", text: prompts[mode] };
+    return { category: "reflection", text: byMode[daily.mode] };
   }
 
-  function applyLifeUpdatePriority(items, latestUpdate) {
+  function healthPrimaryTaskByMode(mode) {
+    const tasks = {
+      attack: "Complete a 45-minute workout before dinner.",
+      progress: "Walk for 20 minutes after your main work block.",
+      stability: "Walk for 15 minutes after work.",
+      protect: "Take a 10-minute walk before going home.",
+      recovery: "Take a 10-minute walk and keep the pace easy."
+    };
+    return tasks[mode];
+  }
+
+  function getMilestoneContext(context) {
+    const profile = context.profile;
+    const text = (profile.phaseMilestone || getFallbackMilestone(profile) || "").toLowerCase();
+
+    if (/(pushup|push-up|sit-up|situp|pull-up|pullup|squat|plank|rep|reps|sets)/.test(text)) {
+      return { text, category: "health", theme: "training" };
+    }
+    if (/(walk|walking|steps|stamina|endurance|cardio|run|running|stand|standing|movement)/.test(text)) {
+      return { text, category: "health", theme: "movement" };
+    }
+    if (/(workout|gym|lift|lifting|train|training|strength|exercise|fitness)/.test(text)) {
+      return { text, category: "health", theme: "workout" };
+    }
+    if (/(business|client|sale|sales|deal|offer|lead|outreach|call|revenue|pipeline|project|launch)/.test(text)) {
+      return { text, category: "money / work", theme: "business" };
+    }
+    if (/(budget|save|saving|debt|income|money|cash)/.test(text)) {
+      return { text, category: "money / work", theme: "money" };
+    }
+    if (/(family|home|relationship|marriage|kids|children|connection)/.test(text)) {
+      return { text, category: "family", theme: "family" };
+    }
+    if (/(skill|habit|practice|discipline|routine|consisten|weekly)/.test(text)) {
+      return { text, category: "personal", theme: "personal" };
+    }
+    if (/(habit|routine|weekly|consisten)/.test(text) && (context.daily.priority === "Health" || /(health|fit|workout|walk)/.test(`${profile.goalTitle} ${profile.target}`.toLowerCase()))) {
+      return { text, category: "health", theme: "movement" };
+    }
+
+    return { text, category: "goal", theme: "general" };
+  }
+
+  function buildMilestoneMainTask(milestoneContext, mode) {
+    const taskMap = {
+      training: {
+        attack: "Do 3 sets today and track your reps.",
+        progress: "Do 3 sets today and write down your best set.",
+        stability: "Do 2 sets today and track your reps.",
+        protect: "Do 1 light set today and track your reps.",
+        recovery: "Attempt 1 easy set today and track your reps."
+      },
+      movement: {
+        attack: "Walk 20 minutes without stopping before dinner.",
+        progress: "Walk 15 minutes without stopping today.",
+        stability: "Walk 10 minutes after work.",
+        protect: "Take a 10-minute walk at an easy pace.",
+        recovery: "Walk 5 quiet minutes and keep the pace easy."
+      },
+      workout: {
+        attack: "Complete a 45-minute workout before dinner.",
+        progress: "Complete a 30-minute workout today.",
+        stability: "Do a 20-minute workout after work.",
+        protect: "Do 10 minutes of light movement before dinner.",
+        recovery: "Stretch or move gently for 10 minutes."
+      },
+      business: {
+        attack: "Make 3 outreach calls before lunch.",
+        progress: "Send 2 follow-up messages before noon.",
+        stability: "Spend 30 minutes on the next revenue task.",
+        protect: "Handle the one work task that cannot slip today.",
+        recovery: "Spend 10 minutes on the next business step."
+      },
+      money: {
+        attack: "Review your numbers for 20 minutes before lunch.",
+        progress: "Review your budget for 15 minutes tonight.",
+        stability: "Check your spending for 10 minutes today.",
+        protect: "Pay or schedule the one bill that matters most.",
+        recovery: "Look at your account and list the next money step."
+      },
+      family: {
+        attack: "Spend 20 phone-free minutes with family tonight.",
+        progress: "Plan 20 calm minutes with family tonight.",
+        stability: "Sit with family for 15 phone-free minutes tonight.",
+        protect: "Spend 10 calm minutes with family tonight.",
+        recovery: "Send one caring message before dinner."
+      },
+      personal: {
+        attack: "Practice your core habit for 20 minutes today.",
+        progress: "Practice your habit for 15 minutes today.",
+        stability: "Do your habit once before dinner.",
+        protect: "Do the smallest version of your habit today.",
+        recovery: "Practice your habit for 5 quiet minutes."
+      },
+      general: {
+        attack: "Spend 45 focused minutes on your next milestone step.",
+        progress: "Spend 30 focused minutes on your next milestone step.",
+        stability: "Spend 20 minutes on your next milestone step.",
+        protect: "Spend 15 minutes on the next step that matters.",
+        recovery: "Spend 10 minutes on one simple next step."
+      }
+    };
+
+    return taskMap[milestoneContext.theme]?.[mode] || taskMap.general[mode];
+  }
+
+  function buildMilestoneSupportTasks(context, milestoneContext) {
+    const mode = context.daily.mode;
+    const supportMap = {
+      training: [
+        "Do 2 more light sets later today.",
+        "Write down your rep count after each set.",
+        "Attempt one harder variation once today."
+      ],
+      movement: [
+        mode === "attack" ? "Walk another 10 minutes later today." : "Walk 5 more minutes later today.",
+        "Track your longest nonstop walk today.",
+        "Stand and stretch for 5 minutes before bed."
+      ],
+      workout: [
+        "Do 2 extra sets for your main movement today.",
+        "Track the number of rounds you complete.",
+        mode === "recovery" ? "Drink water after your movement block." : "Prep your workout clothes before bed."
+      ],
+      business: [
+        mode === "attack" ? "Review your next offer for 15 minutes tonight." : "Write your next 3 outreach targets tonight.",
+        "Make 2 follow-up calls before noon.",
+        "Clear one blocker before your next work block."
+      ],
+      money: [
+        "Write down the next money decision before bed.",
+        "Set aside 10 minutes tonight to review spending.",
+        "Check one bill or payment today."
+      ],
+      family: [
+        "Send one clear check-in message before dinner.",
+        "Spend 10 more phone-free minutes together later.",
+        "Clean one small area that makes home lighter."
+      ],
+      personal: [
+        "Repeat the same habit once more later today.",
+        "Track whether you completed the habit today.",
+        "Set out what you need for tomorrow's habit."
+      ],
+      general: [
+        "Write down the next step before bed.",
+        "Clear one blocker before your next work block."
+      ]
+    };
+
+    return (supportMap[milestoneContext.theme] || supportMap.general).slice(0, 4).map((text) => ({
+      category: milestoneContext.category,
+      text
+    }));
+  }
+
+  function getOutsideSupportTask(options) {
+    const { milestoneContext, recoveryMove, optionalConnection, closingMove } = options;
+
+    if (milestoneContext.category === "family") {
+      return recoveryMove || closingMove || null;
+    }
+    if (recoveryMove) {
+      return recoveryMove;
+    }
+    if (milestoneContext.category !== "family" && optionalConnection) {
+      return optionalConnection;
+    }
+    return closingMove || null;
+  }
+
+  function applyMissionBonuses(tasks, latestUpdate) {
     if (!latestUpdate) {
-      return items;
+      return tasks;
     }
 
-    const bonuses = {
-      "Family crisis": { family: 4, goal: -1, "financial/work": -1 },
-      "Work stress": { "financial/work": 2, goal: -1 },
-      "New opportunity": { "financial/work": 3, goal: 3 },
-      "Financial change": { "financial/work": 4, goal: 2 },
-      "Health issue": { physical: 4, goal: -1 },
-      "Travel / vacation": { "spiritual/community": 2, physical: 1 },
-      "Major life change": { family: 2, "spiritual/community": 2, goal: 1 }
+    const priorityByEvent = {
+      "Family crisis": ["family", "connection", "reset"],
+      "Work stress": ["money / work", "goal", "reset"],
+      "New opportunity": ["goal", "money / work", "growth"],
+      "Financial change": ["money / work", "goal", "reset"],
+      "Health issue": ["health", "reset", "reflection"],
+      "Travel / vacation": ["reset", "health", "connection"],
+      "Major life change": ["reset", "reflection", "family"]
     };
 
-    const emotionBonuses = {
-      Overwhelmed: { reflection: 2, "spiritual/community": 1, goal: -1 },
-      "Burned out": { physical: 2, reflection: 2, goal: -2 },
-      Distracted: { goal: 2 },
-      Focused: { goal: 1, "financial/work": 1 },
-      "High momentum": { goal: 2, "financial/work": 1 },
-      Unmotivated: { reflection: 1, physical: 1 },
-      Lonely: { family: 2, "spiritual/community": 1 }
-    };
-
-    return items
-      .map((item, index) => {
-        let score = 10 - index;
-        score += bonuses[latestUpdate.eventType]?.[item.category] || 0;
-        latestUpdate.emotions.forEach((emotion) => {
-          score += emotionBonuses[emotion]?.[item.category] || 0;
-        });
-        return { ...item, score };
-      })
+    const preferred = priorityByEvent[latestUpdate.eventType] || [];
+    return tasks
+      .map((task, index) => ({
+        ...task,
+        score: 20 - index + (preferred.includes(task.category) ? 4 : 0)
+      }))
       .sort((a, b) => b.score - a.score);
   }
 
-  function getMissionTitle(mode, latestUpdate) {
-    const baseTitles = {
-      attack: "Press forward with precision.",
-      progress: "Build another honest day.",
-      stability: "Hold the line and keep momentum alive.",
-      protect: "Reduce noise. Protect what matters.",
-      recovery: "Stay in the game with low-friction wins."
-    };
-
-    if (!latestUpdate) {
-      return baseTitles[mode];
-    }
-    if (latestUpdate.eventType === "Family crisis") {
-      return "Lead with presence and stability.";
-    }
-    if (latestUpdate.eventType === "New opportunity") {
-      return "Convert momentum into traction.";
-    }
-    if (latestUpdate.eventType === "Health issue") {
-      return "Protect the body and preserve the mission.";
-    }
-    return baseTitles[mode];
+  function dedupeMissionTasks(tasks) {
+    const seen = new Set();
+    return tasks.filter((task) => {
+      const key = task.text.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
   }
 
-  function getMissionSubtitle(context) {
-    const { daily, latestUpdate, lowInfo } = context;
-    if (latestUpdate) {
-      const emotionText = latestUpdate.emotions.length ? ` and ${latestUpdate.emotions.join(", ").toLowerCase()}` : "";
-      return `Recommendations adjusted for ${latestUpdate.eventType.toLowerCase()}${emotionText}.`;
+  function getFallbackPriority(context) {
+    const { latestUpdate, profile } = context;
+    if (latestUpdate?.eventType === "Family crisis") return "Family";
+    if (latestUpdate?.eventType === "Health issue") return "Health";
+    if (latestUpdate?.eventType === "Work stress" || latestUpdate?.eventType === "Financial change" || latestUpdate?.eventType === "New opportunity") return "Money / Work";
+    if (profile.goalTitle) return "Growth";
+    return "Peace / Reset";
+  }
+
+  function getRecentPerformanceSnapshot() {
+    const recentKeys = [];
+    for (let offset = 1; offset <= 5; offset += 1) {
+      recentKeys.push(offsetDateKey(todayKey, -offset));
     }
-    if (lowInfo) {
-      return `Built from your ${daily.state.toLowerCase()} state with a low-info profile. Add more detail later for sharper personalization.`;
+
+    const stats = recentKeys
+      .map((dateKey) => appState.performance[dateKey])
+      .filter(Boolean);
+
+    if (!stats.length) {
+      return { completionRate: 0.65, winRate: 0.5, strongDays: 0 };
     }
-    return `Adapted for a ${daily.mode} day using your goal, phase, and life context.`;
+
+    const completionRate = stats.reduce((sum, day) => sum + (day.completionPercentage || 0), 0) / stats.length;
+    const winRate = stats.reduce((sum, day) => sum + (day.won ? 1 : 0), 0) / stats.length;
+    const strongDays = stats.filter((day) => (day.completionPercentage || 0) >= 0.8 || day.won).length;
+
+    return { completionRate, winRate, strongDays };
+  }
+
+  function getMissionTitle(context) {
+    const { daily, latestUpdate } = context;
+    const titles = {
+      attack: "Push the right things forward.",
+      progress: "Build a solid day you can trust.",
+      stability: "Keep the day clear and useful.",
+      protect: "Protect energy and handle what matters.",
+      recovery: "Make the day gentler, not empty."
+    };
+
+    if (latestUpdate?.eventType === "Family crisis") {
+      return "Lead the day with presence.";
+    }
+    if (latestUpdate?.eventType === "Health issue") {
+      return "Protect your body and keep the day simple.";
+    }
+    if (latestUpdate?.eventType === "New opportunity") {
+      return "Use today to turn momentum into traction.";
+    }
+    return titles[daily.mode];
   }
 
   function renderDashboard() {
@@ -720,11 +1237,12 @@
     elements.todayState.textContent = daily.state;
     elements.todayMode.textContent = daily.mode;
     elements.todaySummary.textContent = daily.coachResponse;
+    elements.momentumStatus.textContent = getMomentumStatus(getTodayContext());
 
     elements.goalCardTitle.textContent = profile.goalTitle || "Your main mission";
-    elements.goalWhyText.textContent = profile.why || "A clear goal, repeated daily, becomes a new life architecture.";
-    elements.goalBaselineText.textContent = profile.baseline || "Current state not set";
-    elements.goalTargetText.textContent = profile.target || "Target not set";
+    elements.goalWhyText.textContent = profile.why || "Clarity gets stronger when you keep returning to what matters.";
+    elements.goalBaselineText.textContent = profile.baseline || "Not clear yet";
+    elements.goalTargetText.textContent = profile.target || "Still taking shape";
 
     if (profile.timeline) {
       elements.goalTimelineChip.textContent = profile.timeline;
@@ -737,18 +1255,21 @@
     elements.progressLabel.textContent = progressPercent.label;
     elements.progressFill.style.width = `${progressPercent.value}%`;
 
+    syncDailyPerformanceFromMission();
     syncRoadmap();
     saveState();
     const roadmap = appState.roadmap;
+    const nextMilestone = profile.phaseMilestone || getFallbackMilestone(profile);
     elements.phaseCardTitle.textContent = profile.phaseName || roadmap[0].title;
-    elements.phaseFocusText.textContent = profile.phaseFocus || "Consistency and useful action";
-    elements.phaseMilestoneText.textContent = profile.phaseMilestone || "One clear visible step forward";
-    elements.phaseWhyText.textContent = profile.phaseWhy || "This phase matters because stable execution creates the right future from where you actually are.";
+    elements.phaseFocusText.textContent = profile.phaseFocus || profile.gap || "Choose the next useful thing and do it well";
+    elements.phaseMilestoneText.textContent = nextMilestone;
+    elements.phaseWhyText.textContent = profile.phaseWhy || getFallbackMilestoneReason(profile, nextMilestone);
 
     renderRoadmap(profile);
     elements.missionTitle.textContent = mission.title;
     elements.missionSubtitle.textContent = mission.subtitle;
     renderMissionItems(mission.items);
+    renderMissionCompletionState(mission);
 
     elements.totalWins.textContent = String(appState.totalWins || 0);
     elements.historyPhase.textContent = profile.phaseName || roadmap[0].title;
@@ -805,25 +1326,60 @@
     ];
   }
 
+  function getFallbackMilestone(profile) {
+    const goalText = `${profile.goalTitle} ${profile.target} ${profile.baseline}`.toLowerCase();
+
+    // Keep fallback milestones tied to real-life areas without changing the stored shape.
+    if (/(health|fit|fitness|workout|gym|weight|run|training|sleep)/.test(goalText)) {
+      return "Build a consistent weekly workout routine";
+    }
+    if (/(money|work|income|career|job|business|client|sales|revenue|debt)/.test(goalText)) {
+      return "Complete the next concrete move that creates opportunity";
+    }
+    if (/(family|marriage|kids|children|home|relationship)/.test(goalText)) {
+      return "Create one repeatable habit that improves connection at home";
+    }
+    if (/(growth|learn|study|skill|discipline|habit)/.test(goalText)) {
+      return "Build a repeatable action that moves you forward each week";
+    }
+
+    return "Complete the next concrete move that creates momentum";
+  }
+
+  function getFallbackMilestoneReason(profile, milestone) {
+    if (profile.timeline) {
+      return `Why this matters: it gives you a real checkpoint before ${profile.timeline}.`;
+    }
+    return `Why this matters: ${milestone.toLowerCase()} gives you a clear next target.`;
+  }
+
   function renderMissionItems(items) {
     elements.missionList.innerHTML = "";
     items.forEach((item, index) => {
       const wrapper = document.createElement("div");
-      wrapper.className = "mission-item";
+      wrapper.className = `mission-item ${item.completed ? "is-complete" : ""}`;
       wrapper.innerHTML = `
         <input class="mission-check" type="checkbox" ${item.completed ? "checked" : ""} aria-label="Mark mission item complete">
         <div class="mission-meta">
           <span class="mission-tag">${item.category}</span>
           <textarea rows="3">${item.text}</textarea>
         </div>
+        <span class="mission-encouragement hidden"></span>
       `;
 
       const checkbox = wrapper.querySelector(".mission-check");
       const textarea = wrapper.querySelector("textarea");
+      const encouragement = wrapper.querySelector(".mission-encouragement");
 
       checkbox.addEventListener("change", () => {
         appState.missions[todayKey].items[index].completed = checkbox.checked;
+        wrapper.classList.toggle("is-complete", checkbox.checked);
         saveState();
+        syncDailyPerformanceFromMission();
+        if (checkbox.checked) {
+          triggerTaskCompletionFeedback(wrapper, encouragement);
+        }
+        renderMissionCompletionState(appState.missions[todayKey]);
       });
 
       textarea.addEventListener("input", () => {
@@ -835,12 +1391,91 @@
     });
   }
 
+  function renderMissionCompletionState(mission) {
+    const items = mission?.items || [];
+    const completedCount = items.filter((item) => item.completed).length;
+    const isComplete = items.length > 0 && completedCount === items.length;
+    const wasComplete = elements.missionCard.classList.contains("mission-complete");
+
+    elements.missionCard.classList.toggle("mission-complete", isComplete);
+    elements.missionFeedback.classList.toggle("hidden", !isComplete);
+    if (isComplete) {
+      elements.missionFeedback.innerHTML = "<strong>Mission complete.</strong><span>You finished what mattered.</span>";
+      if (!wasComplete) {
+        pulseElement(elements.missionCard, "card-wave");
+      }
+    } else {
+      elements.missionFeedback.innerHTML = "";
+    }
+  }
+
+  function triggerTaskCompletionFeedback(wrapper, encouragement) {
+    encouragement.textContent = TASK_FEEDBACK_MESSAGES[Math.floor(Math.random() * TASK_FEEDBACK_MESSAGES.length)];
+    encouragement.classList.remove("hidden");
+    wrapper.classList.add("task-pop");
+    wrapper.classList.add("task-glow");
+
+    window.setTimeout(() => {
+      wrapper.classList.remove("task-pop");
+      wrapper.classList.remove("task-glow");
+    }, 900);
+
+    window.setTimeout(() => {
+      encouragement.classList.add("hidden");
+      encouragement.textContent = "";
+    }, 1400);
+  }
+
+  function syncDailyPerformanceFromMission() {
+    // Track assigned/completed tasks by date so tomorrow's mission load can adapt.
+    const mission = appState.missions[todayKey];
+    if (!mission?.items?.length) {
+      return;
+    }
+
+    const assigned = mission.items.length;
+    const completed = mission.items.filter((item) => item.completed).length;
+    appState.performance[todayKey] = {
+      ...(appState.performance[todayKey] || {}),
+      date: todayKey,
+      assignedTasks: assigned,
+      completedTasks: completed,
+      completionPercentage: assigned ? completed / assigned : 0,
+      loadLevel: mission.loadLevel || appState.performance[todayKey]?.loadLevel || "Standard",
+      won: Boolean(appState.wins[todayKey]?.won),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function getMomentumStatus(context) {
+    const snapshot = getRecentPerformanceSnapshot();
+    const mode = context.daily.mode;
+
+    if (mode === "attack" && snapshot.strongDays >= 3) return "Pressure is a privilege.";
+    if (context.daily.state === "Locked In" && snapshot.completionRate >= 0.75) return "You're in rhythm.";
+    if (context.daily.state === "Good" && snapshot.winRate >= 0.6) return "Momentum is building.";
+    if (mode === "stability" && snapshot.completionRate >= 0.55) return "Stay steady.";
+    if (mode === "protect") return "Protect the streak.";
+    if (mode === "recovery") return "Rebuild the rhythm.";
+    return "Keep the chain alive.";
+  }
+
+  function pulseElement(element, className) {
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+    window.setTimeout(() => {
+      element.classList.remove(className);
+    }, 1200);
+  }
+
   function calculateProgressSignal(profile) {
     let score = 12;
     if (profile.goalTitle) score += 10;
     if (profile.why) score += 12;
     if (profile.baseline) score += 7;
     if (profile.target) score += 10;
+    if (profile.gap) score += 8;
     if (profile.timeline) score += 6;
     if (profile.phaseName) score += 8;
     if (profile.phaseFocus) score += 8;
@@ -891,9 +1526,15 @@
 
       appState.lastWinDate = todayKey;
       appState.totalWins += 1;
+      syncDailyPerformanceFromMission();
+      if (appState.performance[todayKey]) {
+        appState.performance[todayKey].won = true;
+      }
       saveState();
       renderDashboard();
-      updateWinStatus("Win locked. Protect the streak.");
+      pulseElement(elements.winCard, "win-celebration");
+      pulseElement(elements.streakPill, "streak-bump");
+      updateWinStatus(WIN_REWARD_MESSAGES[Math.floor(Math.random() * WIN_REWARD_MESSAGES.length)]);
       return;
     }
 
@@ -907,6 +1548,10 @@
       won: false,
       updatedAt: new Date().toISOString()
     };
+    syncDailyPerformanceFromMission();
+    if (appState.performance[todayKey]) {
+      appState.performance[todayKey].won = false;
+    }
     saveState();
     updateWinStatus("Day still open. You can come back and claim it later.");
     renderWinHistory();
@@ -974,6 +1619,15 @@
       total += seed.charCodeAt(i) * (i + 1);
     }
     return total % length;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function formatDisplayDate(date) {

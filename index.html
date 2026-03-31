@@ -30,102 +30,23 @@
           <h2>Where are you at today?</h2>
           <div id="state-options" class="state-grid"></div>
           <div id="opening-feedback" class="feedback hidden"></div>
+          <div id="priority-section" class="priority-section hidden">
+            <div class="priority-head">
+              <h3>What matters most today?</h3>
+              <button id="skip-priority-btn" class="btn btn-ghost btn-inline" type="button">Skip</button>
+            </div>
+            <div id="priority-options" class="priority-grid"></div>
+          </div>
           <button id="start-day-btn" class="btn btn-primary btn-large hidden" type="button">Start My Day</button>
         </section>
       </section>
 
       <section id="onboarding-screen" class="screen panel hidden">
-        <div class="eyebrow">Setup</div>
-        <h1 class="hero-title">Build your operating system.</h1>
-        <p class="hero-copy">Only your goal title is required. The rest is optional, but more detail improves personalization.</p>
+        <div class="eyebrow">Clarity Builder</div>
+        <h1 class="hero-title">Get clear one step at a time.</h1>
+        <p class="hero-copy">Answer what helps, skip what doesn&apos;t, and we&apos;ll shape the app around your real life.</p>
 
-        <form id="profile-form" class="profile-form">
-          <div class="field-group">
-            <label for="goal-title">Goal title</label>
-            <input id="goal-title" name="goalTitle" type="text" maxlength="120" placeholder="Become debt free, build my business, get in elite shape" required>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="goal-why">Why / identity statement <span class="optional">Optional</span></label>
-              <textarea id="goal-why" name="why" rows="3" placeholder="Who are you becoming through this?"></textarea>
-            </div>
-            <div class="field-group">
-              <label for="goal-timeline">Desired timeline <span class="optional">Optional</span></label>
-              <input id="goal-timeline" name="timeline" type="text" maxlength="80" placeholder="6 months, by December, this year">
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="goal-baseline">Baseline <span class="optional">Optional</span></label>
-              <input id="goal-baseline" name="baseline" type="text" maxlength="80" placeholder="Current starting point">
-            </div>
-            <div class="field-group">
-              <label for="goal-target">Target <span class="optional">Optional</span></label>
-              <input id="goal-target" name="target" type="text" maxlength="80" placeholder="Desired end state">
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="phase-name">Current phase name <span class="optional">Optional</span></label>
-              <input id="phase-name" name="phaseName" type="text" maxlength="80" placeholder="Foundation, Rebuild, Launch">
-            </div>
-            <div class="field-group">
-              <label for="phase-focus">Current phase focus <span class="optional">Optional</span></label>
-              <input id="phase-focus" name="phaseFocus" type="text" maxlength="120" placeholder="What matters most right now">
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="phase-milestone">Current phase milestone <span class="optional">Optional</span></label>
-              <input id="phase-milestone" name="phaseMilestone" type="text" maxlength="120" placeholder="First 10 clients, lose 10 pounds, save $5,000">
-            </div>
-            <div class="field-group">
-              <label for="phase-note">Why this phase matters now <span class="optional">Optional</span></label>
-              <input id="phase-note" name="phaseWhy" type="text" maxlength="140" placeholder="Why this season matters">
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="financial-notes">Financial situation notes <span class="optional">Optional</span></label>
-              <textarea id="financial-notes" name="financialNotes" rows="3" placeholder="Income pressure, debt, savings, runway"></textarea>
-            </div>
-            <div class="field-group">
-              <label for="physical-notes">Physical situation notes <span class="optional">Optional</span></label>
-              <textarea id="physical-notes" name="physicalNotes" rows="3" placeholder="Energy, sleep, injury, training, health"></textarea>
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="family-notes">Family situation notes <span class="optional">Optional</span></label>
-              <textarea id="family-notes" name="familyNotes" rows="3" placeholder="Family needs, responsibilities, support system"></textarea>
-            </div>
-            <div class="field-group">
-              <label for="spiritual-notes">Spiritual / community notes <span class="optional">Optional</span></label>
-              <textarea id="spiritual-notes" name="spiritualNotes" rows="3" placeholder="Faith, service, friendships, community"></textarea>
-            </div>
-          </div>
-
-          <div class="grid two-col">
-            <div class="field-group">
-              <label for="strengths">Strengths <span class="optional">Optional</span></label>
-              <textarea id="strengths" name="strengths" rows="3" placeholder="What you can rely on in yourself"></textarea>
-            </div>
-            <div class="field-group">
-              <label for="obstacles">Obstacles <span class="optional">Optional</span></label>
-              <textarea id="obstacles" name="obstacles" rows="3" placeholder="What keeps getting in the way"></textarea>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button class="btn btn-primary btn-large" type="submit">Launch Dashboard</button>
-          </div>
-        </form>
+        <div id="profile-form" class="profile-flow"></div>
       </section>
 
       <section id="dashboard-screen" class="screen hidden">
@@ -147,7 +68,7 @@
                 <p class="card-label">Today</p>
                 <h2 id="today-date"></h2>
               </div>
-              <div class="streak-pill">
+              <div class="streak-pill" id="streak-pill">
                 <span>Streak</span>
                 <strong id="streak-count">0</strong>
               </div>
@@ -166,6 +87,7 @@
                 <strong id="today-summary">Hold the line.</strong>
               </div>
             </div>
+            <p id="momentum-status" class="momentum-status">Stay steady.</p>
           </article>
 
           <article class="card panel">
@@ -179,11 +101,11 @@
             <p id="goal-why-text" class="muted"></p>
             <div class="goal-metrics">
               <div>
-                <span class="mini-label">Baseline</span>
+                <span class="mini-label">Right now</span>
                 <strong id="goal-baseline-text">Not set</strong>
               </div>
               <div>
-                <span class="mini-label">Target</span>
+                <span class="mini-label">What success looks like</span>
                 <strong id="goal-target-text">Not set</strong>
               </div>
             </div>
@@ -207,7 +129,7 @@
             </div>
             <div class="phase-grid">
               <div>
-                <span class="mini-label">Focus</span>
+                <span class="mini-label">What matters most right now</span>
                 <strong id="phase-focus-text"></strong>
               </div>
               <div>
@@ -228,7 +150,7 @@
             <div id="roadmap-list" class="roadmap-list"></div>
           </article>
 
-          <article class="card panel mission-card mission-card-wide">
+          <article id="mission-card" class="card panel mission-card mission-card-wide">
             <div class="card-head">
               <div>
                 <p class="card-label">Today&apos;s Mission</p>
@@ -237,6 +159,7 @@
               <button id="regenerate-mission-btn" class="btn btn-ghost" type="button">Refresh Mission</button>
             </div>
             <p id="mission-subtitle" class="muted"></p>
+            <div id="mission-feedback" class="mission-feedback hidden" aria-live="polite"></div>
             <div id="mission-list" class="mission-list"></div>
           </article>
 
@@ -290,7 +213,7 @@
             <button id="save-reflection-btn" class="btn btn-secondary" type="button">Save Reflection</button>
           </article>
 
-          <article class="card panel win-card">
+          <article id="win-card" class="card panel win-card">
             <div class="card-head">
               <div>
                 <p class="card-label">Win Check</p>
@@ -306,6 +229,10 @@
         </section>
       </section>
     </main>
+
+    <div class="dev-tools">
+      <button id="reset-app-btn" class="btn btn-ghost dev-reset-btn" type="button">Reset App</button>
+    </div>
   </div>
 
   <div id="profile-modal" class="modal hidden" aria-hidden="true">
@@ -314,11 +241,11 @@
       <div class="modal-head">
         <div>
           <p class="eyebrow">Edit Goal</p>
-          <h2>Update your profile</h2>
+          <h2>Update your clarity</h2>
         </div>
-        <button class="icon-btn" type="button" data-close-modal="profile-modal" aria-label="Close">×</button>
+        <button class="icon-btn" type="button" data-close-modal="profile-modal" aria-label="Close">&times;</button>
       </div>
-      <form id="profile-modal-form" class="profile-form profile-form-compact"></form>
+      <div id="profile-modal-form" class="profile-flow profile-form-compact"></div>
     </div>
   </div>
 
@@ -330,7 +257,7 @@
           <p class="eyebrow">Situation Update</p>
           <h2>What changed?</h2>
         </div>
-        <button class="icon-btn" type="button" data-close-modal="life-update-modal" aria-label="Close">×</button>
+        <button class="icon-btn" type="button" data-close-modal="life-update-modal" aria-label="Close">&times;</button>
       </div>
       <form id="life-update-form" class="life-update-form">
         <div class="field-group">
@@ -363,86 +290,6 @@
       </form>
     </div>
   </div>
-
-  <template id="profile-fields-template">
-    <div class="field-group">
-      <label for="modal-goal-title">Goal title</label>
-      <input id="modal-goal-title" name="goalTitle" type="text" maxlength="120" required>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-goal-why">Why / identity statement <span class="optional">Optional</span></label>
-        <textarea id="modal-goal-why" name="why" rows="3"></textarea>
-      </div>
-      <div class="field-group">
-        <label for="modal-goal-timeline">Desired timeline <span class="optional">Optional</span></label>
-        <input id="modal-goal-timeline" name="timeline" type="text" maxlength="80">
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-goal-baseline">Baseline <span class="optional">Optional</span></label>
-        <input id="modal-goal-baseline" name="baseline" type="text" maxlength="80">
-      </div>
-      <div class="field-group">
-        <label for="modal-goal-target">Target <span class="optional">Optional</span></label>
-        <input id="modal-goal-target" name="target" type="text" maxlength="80">
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-phase-name">Current phase name <span class="optional">Optional</span></label>
-        <input id="modal-phase-name" name="phaseName" type="text" maxlength="80">
-      </div>
-      <div class="field-group">
-        <label for="modal-phase-focus">Current phase focus <span class="optional">Optional</span></label>
-        <input id="modal-phase-focus" name="phaseFocus" type="text" maxlength="120">
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-phase-milestone">Current phase milestone <span class="optional">Optional</span></label>
-        <input id="modal-phase-milestone" name="phaseMilestone" type="text" maxlength="120">
-      </div>
-      <div class="field-group">
-        <label for="modal-phase-why">Why this phase matters now <span class="optional">Optional</span></label>
-        <input id="modal-phase-why" name="phaseWhy" type="text" maxlength="140">
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-financial-notes">Financial situation notes <span class="optional">Optional</span></label>
-        <textarea id="modal-financial-notes" name="financialNotes" rows="3"></textarea>
-      </div>
-      <div class="field-group">
-        <label for="modal-physical-notes">Physical situation notes <span class="optional">Optional</span></label>
-        <textarea id="modal-physical-notes" name="physicalNotes" rows="3"></textarea>
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-family-notes">Family situation notes <span class="optional">Optional</span></label>
-        <textarea id="modal-family-notes" name="familyNotes" rows="3"></textarea>
-      </div>
-      <div class="field-group">
-        <label for="modal-spiritual-notes">Spiritual / community notes <span class="optional">Optional</span></label>
-        <textarea id="modal-spiritual-notes" name="spiritualNotes" rows="3"></textarea>
-      </div>
-    </div>
-    <div class="grid two-col">
-      <div class="field-group">
-        <label for="modal-strengths">Strengths <span class="optional">Optional</span></label>
-        <textarea id="modal-strengths" name="strengths" rows="3"></textarea>
-      </div>
-      <div class="field-group">
-        <label for="modal-obstacles">Obstacles <span class="optional">Optional</span></label>
-        <textarea id="modal-obstacles" name="obstacles" rows="3"></textarea>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-primary" type="submit">Save Changes</button>
-    </div>
-  </template>
 
   <script src="script.js"></script>
 </body>
