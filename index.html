@@ -56,6 +56,7 @@
             <h1 class="app-title">Life Execution</h1>
           </div>
           <div class="topbar-actions">
+            <button id="open-profile-btn" class="btn btn-secondary" type="button">My Profile</button>
             <button id="edit-profile-btn" class="btn btn-secondary" type="button">Edit Goal</button>
             <button id="open-update-btn" class="btn btn-secondary" type="button">Update My Situation</button>
           </div>
@@ -90,7 +91,7 @@
             <p id="momentum-status" class="momentum-status">Stay steady.</p>
           </article>
 
-          <article class="card panel">
+          <article id="goal-card" class="card panel">
             <div class="card-head">
               <div>
                 <p class="card-label">Main Goal</p>
@@ -123,9 +124,21 @@
           <article class="card panel">
             <div class="card-head">
               <div>
+                <p class="card-label">Your Goals</p>
+                <h2>Primary and supporting goals</h2>
+              </div>
+              <button id="add-goal-btn" class="btn btn-ghost" type="button">Add Goal</button>
+            </div>
+            <div id="goals-list" class="goals-list"></div>
+          </article>
+
+          <article class="card panel">
+            <div class="card-head">
+              <div>
                 <p class="card-label">Current Phase</p>
                 <h2 id="phase-card-title"></h2>
               </div>
+              <button id="view-timeline-btn" class="btn btn-ghost" type="button">View Timeline</button>
             </div>
             <div class="phase-grid">
               <div>
@@ -230,9 +243,21 @@
       </section>
     </main>
 
-    <div class="dev-tools">
+  <div class="dev-tools">
+      <div class="dev-date-tools panel">
+        <div class="dev-date-head">
+          <span class="mini-label">App Date</span>
+          <span id="dev-date-badge" class="chip hidden">Test Mode</span>
+        </div>
+        <strong id="dev-date-label">Loading...</strong>
+        <div class="dev-date-actions">
+          <button id="use-real-date-btn" class="btn btn-ghost dev-reset-btn" type="button">Use Real Date</button>
+          <button id="prev-day-btn" class="btn btn-ghost dev-reset-btn" type="button">Previous Day</button>
+          <button id="next-day-btn" class="btn btn-ghost dev-reset-btn" type="button">Next Day</button>
+        </div>
+      </div>
       <button id="reset-app-btn" class="btn btn-ghost dev-reset-btn" type="button">Reset App</button>
-    </div>
+  </div>
   </div>
 
   <div id="profile-modal" class="modal hidden" aria-hidden="true">
@@ -286,6 +311,339 @@
 
         <div class="form-actions">
           <button class="btn btn-primary" type="submit">Save Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="timeline-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="timeline-modal"></div>
+    <div class="modal-panel panel timeline-modal-panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Milestone Timeline</p>
+          <h2>See the path clearly.</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="timeline-modal" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="timeline-summary">
+        <div>
+          <span class="mini-label">Progress</span>
+          <strong id="timeline-progress-percent">0%</strong>
+        </div>
+        <div>
+          <span class="mini-label">Milestones</span>
+          <strong id="timeline-progress-count">0 of 0 complete</strong>
+        </div>
+      </div>
+
+      <div id="timeline-feedback" class="timeline-feedback hidden" aria-live="polite"></div>
+
+      <div id="timeline-scroll" class="timeline-scroll">
+        <div id="timeline-track" class="timeline-track"></div>
+      </div>
+
+      <article class="timeline-detail panel">
+        <div class="timeline-detail-head">
+          <div>
+            <p class="card-label">Selected Milestone</p>
+            <h3 id="timeline-detail-title">No milestone selected</h3>
+          </div>
+          <span id="timeline-detail-status" class="chip hidden"></span>
+        </div>
+        <p id="timeline-detail-text" class="muted">Milestone details will appear here.</p>
+        <button id="timeline-complete-btn" class="btn btn-primary hidden" type="button">Complete Current Milestone</button>
+      </article>
+    </div>
+  </div>
+
+  <div id="goal-manager-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="goal-manager-modal"></div>
+    <div class="modal-panel panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Goal Manager</p>
+          <h2 id="goal-modal-title">Add Goal</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="goal-manager-modal" aria-label="Close">&times;</button>
+      </div>
+      <form id="goal-manager-form" class="life-update-form">
+        <input id="goal-edit-id" name="goalId" type="hidden">
+
+        <div class="field-group">
+          <label for="goal-input-title">Title</label>
+          <textarea id="goal-input-title" name="title" rows="3" maxlength="160" placeholder="Build a stronger sales pipeline" required></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="goal-input-why">Why</label>
+          <textarea id="goal-input-why" name="why" rows="3" maxlength="220" placeholder="It creates stability and keeps momentum real." required></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="goal-input-baseline">Baseline</label>
+          <textarea id="goal-input-baseline" name="baseline" rows="3" maxlength="220" placeholder="Leads are inconsistent and follow-up is loose." required></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="goal-input-milestone">Milestone <span class="optional">Optional</span></label>
+          <textarea id="goal-input-milestone" name="milestone" rows="3" maxlength="220" placeholder="Book 3 strong calls this month"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Save Goal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="my-profile-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="my-profile-modal"></div>
+    <div class="modal-panel panel profile-context-panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">My Profile</p>
+          <h2>Optional context for better guidance</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="my-profile-modal" aria-label="Close">&times;</button>
+      </div>
+
+      <p class="muted profile-context-intro">The more the app knows about your life, the better it can guide you. Everything here is optional.</p>
+
+      <form id="my-profile-form" class="life-update-form">
+        <details class="profile-section" open>
+          <summary>Work / Money</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-job-role">Job / Role</label>
+              <input id="profile-job-role" name="jobRole" type="text" placeholder="Sales manager, founder, freelance designer">
+            </div>
+            <div class="field-group">
+              <label for="profile-monthly-income">Approximate monthly income</label>
+              <select id="profile-monthly-income" name="monthlyIncome">
+                <option value="">Choose if useful</option>
+                <option>Under $2,000</option>
+                <option>$2,000-$5,000</option>
+                <option>$5,000-$10,000</option>
+                <option>$10,000+</option>
+                <option>Prefer not to say</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-work-days">Normal work days</label>
+              <input id="profile-work-days" name="workDays" type="text" placeholder="Mon-Fri, Tue-Sat, irregular">
+            </div>
+            <div class="field-group">
+              <label for="profile-work-hours">Normal work hours</label>
+              <input id="profile-work-hours" name="workHours" type="text" placeholder="8am-5pm, split shifts, evenings">
+            </div>
+            <div class="field-group">
+              <label for="profile-income-increase">Trying to increase income right now?</label>
+              <select id="profile-income-increase" name="increaseIncome">
+                <option value="">Choose if useful</option>
+                <option>Yes</option>
+                <option>No</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-money-urgency">How urgent is money right now?</label>
+              <select id="profile-money-urgency" name="moneyUrgency">
+                <option value="">Choose if useful</option>
+                <option>Low</option>
+                <option>Medium</option>
+                <option>High</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="profile-section">
+          <summary>Family / Responsibility</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-relationship-status">Relationship status</label>
+              <select id="profile-relationship-status" name="relationshipStatus">
+                <option value="">Choose if useful</option>
+                <option>Single</option>
+                <option>Married</option>
+                <option>Partner</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-has-children">Do you have children?</label>
+              <select id="profile-has-children" name="hasChildren">
+                <option value="">Choose if useful</option>
+                <option>Yes</option>
+                <option>No</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-children-count">If yes, how many?</label>
+              <input id="profile-children-count" name="childrenCount" type="number" min="0" step="1" placeholder="0">
+            </div>
+            <div class="field-group">
+              <label for="profile-family-load">Daily family responsibility level</label>
+              <select id="profile-family-load" name="familyResponsibility">
+                <option value="">Choose if useful</option>
+                <option>Low</option>
+                <option>Medium</option>
+                <option>High</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-family-priority">Is family a major priority right now?</label>
+              <select id="profile-family-priority" name="familyPriority">
+                <option value="">Choose if useful</option>
+                <option>Yes</option>
+                <option>No</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="profile-section">
+          <summary>Health / Body</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-fitness-level">Current fitness level</label>
+              <select id="profile-fitness-level" name="fitnessLevel">
+                <option value="">Choose if useful</option>
+                <option>Beginner</option>
+                <option>Intermediate</option>
+                <option>Advanced</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-limitations">Any physical limitations or injuries?</label>
+              <select id="profile-limitations" name="limitations">
+                <option value="">Choose if useful</option>
+                <option>Yes</option>
+                <option>No</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-limitations-notes">If yes, explain</label>
+              <input id="profile-limitations-notes" name="limitationsNotes" type="text" placeholder="Knee pain, back issue, limited mobility">
+            </div>
+            <div class="field-group">
+              <label for="profile-health-goal">Main health goal right now</label>
+              <select id="profile-health-goal" name="healthGoal">
+                <option value="">Choose if useful</option>
+                <option>Fat loss</option>
+                <option>Strength</option>
+                <option>Endurance</option>
+                <option>General health</option>
+                <option>Recovery</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-energy">Energy lately</label>
+              <select id="profile-energy" name="energy">
+                <option value="">Choose if useful</option>
+                <option>Low</option>
+                <option>Medium</option>
+                <option>High</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="profile-section">
+          <summary>Time / Lifestyle</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-weekday-time">Focused time available on weekdays</label>
+              <select id="profile-weekday-time" name="weekdayTime">
+                <option value="">Choose if useful</option>
+                <option>Less than 30 min</option>
+                <option>30-60 min</option>
+                <option>1-2 hrs</option>
+                <option>2+ hrs</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-weekend-time">Focused time available on weekends</label>
+              <select id="profile-weekend-time" name="weekendTime">
+                <option value="">Choose if useful</option>
+                <option>Less than 30 min</option>
+                <option>30-60 min</option>
+                <option>1-2 hrs</option>
+                <option>2+ hrs</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-best-time">Best time of day for hard tasks</label>
+              <select id="profile-best-time" name="bestTaskTime">
+                <option value="">Choose if useful</option>
+                <option>Morning</option>
+                <option>Midday</option>
+                <option>Evening</option>
+                <option>Night</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-sleep-quality">Sleep quality lately</label>
+              <select id="profile-sleep-quality" name="sleepQuality">
+                <option value="">Choose if useful</option>
+                <option>Poor</option>
+                <option>Okay</option>
+                <option>Good</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="profile-section">
+          <summary>Coaching Style</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-coaching-style">How should the app push you?</label>
+              <select id="profile-coaching-style" name="coachingStyle">
+                <option value="">Choose if useful</option>
+                <option>Calm</option>
+                <option>Balanced</option>
+                <option>Intense</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-stress-help">When stressed, what helps most?</label>
+              <select id="profile-stress-help" name="stressHelp">
+                <option value="">Choose if useful</option>
+                <option>Rest</option>
+                <option>Structure</option>
+                <option>Family time</option>
+                <option>Exercise</option>
+                <option>Quiet time</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="profile-task-style">Task style preference</label>
+              <select id="profile-task-style" name="taskStyle">
+                <option value="">Choose if useful</option>
+                <option>Fewer bigger tasks</option>
+                <option>More smaller tasks</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="profile-section">
+          <summary>More Info</summary>
+          <div class="profile-section-body">
+            <div class="field-group">
+              <label for="profile-more-info">Anything else the app should know about your life, responsibilities, goals, schedule, challenges, or what works for you?</label>
+              <textarea id="profile-more-info" name="moreInfo" rows="6" placeholder="Optional notes for future smarter planning."></textarea>
+            </div>
+          </div>
+        </details>
+
+        <div class="form-actions profile-form-actions">
+          <span id="my-profile-status" class="muted hidden">Profile saved.</span>
+          <button class="btn btn-primary" type="submit">Save Profile</button>
         </div>
       </form>
     </div>
