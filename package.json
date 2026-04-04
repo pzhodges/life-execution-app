@@ -1,0 +1,9 @@
+{
+  "name": "life-execution-app",
+  "version": "5.0.0",
+  "private": true,
+  "description": "Life Execution V5 with AI milestone suggestions",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

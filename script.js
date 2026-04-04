@@ -1,4 +1,4 @@
-// Life Execution V4.6
+// Life Execution V5.0
 // Local-first personal operating system built with vanilla JavaScript.
 
 (function () {
@@ -143,6 +143,8 @@
   ];
 
   const GOAL_COMPLETION_SECONDARY_LINE = "Take a second. This matters.";
+  const AI_MILESTONE_ROUTE = "/api/suggest-next-milestone";
+  const AI_ROADMAP_ROUTE = "/api/generate-roadmap";
 
   const CLARITY_STEPS = [
     {
@@ -153,17 +155,10 @@
       type: "textarea"
     },
     {
-      key: "target",
-      question: "What does success look like?",
-      hint: "Describe the result in plain language.",
-      placeholder: "Consistent income, stronger health, a finished launch",
-      type: "textarea"
-    },
-    {
-      key: "timeline",
-      question: "When do you want this done by?",
-      hint: "Use simple timing, not exact dates unless you want to.",
-      placeholder: "End of this year, in 6 months, by July",
+      key: "why",
+      question: "Why does this matter right now?",
+      hint: "Keep it human. Short is fine.",
+      placeholder: "I need stability, I want to show up for my family, I'm tired of drifting",
       type: "textarea"
     },
     {
@@ -174,6 +169,13 @@
       type: "textarea"
     },
     {
+      key: "target",
+      question: "What does success look like?",
+      hint: "Describe the result in plain language.",
+      placeholder: "Consistent income, stronger health, a finished launch",
+      type: "textarea"
+    },
+    {
       key: "gap",
       question: "What's the biggest thing missing right now?",
       hint: "This becomes what matters most right now inside the app.",
@@ -181,36 +183,10 @@
       type: "textarea"
     },
     {
-      key: "phaseName",
-      question: "What phase are you in right now?",
-      hint: "Pick the season that feels most true.",
-      type: "choice",
-      options: [
-        "Figuring it out",
-        "Building the foundation",
-        "Growing",
-        "Scaling"
-      ]
-    },
-    {
-      key: "phaseMilestone",
-      question: "What is the next milestone?",
-      hint: "Name the next meaningful checkpoint, not the final outcome.",
-      placeholder: "Launch the first offer, complete 4 workouts a week, save the first $1,000",
-      type: "textarea"
-    },
-    {
-      key: "phaseWhy",
-      question: "Why does this milestone matter?",
-      hint: "Optional, but useful when you want more context on the dashboard.",
-      placeholder: "Because it proves progress is real and gives me the next clear target",
-      type: "textarea"
-    },
-    {
-      key: "why",
-      question: "Why does this matter right now?",
-      hint: "Keep it human. Short is fine.",
-      placeholder: "I need stability, I want to show up for my family, I’m tired of drifting",
+      key: "contextNotes",
+      question: "Any optional context worth knowing?",
+      hint: "Share anything that should shape the plan, or skip it.",
+      placeholder: "Time limits, family pressure, money urgency, energy, schedule, or constraints",
       type: "textarea"
     }
   ];
@@ -222,6 +198,7 @@
     modalStep: 0,
     timelineSelectionId: "",
     pendingMilestoneAdvance: null,
+    pendingRoadmapApproval: null,
     selectedCompletedGoalId: "",
     goalCelebration: null
   };
@@ -285,6 +262,8 @@
     phaseFocusText: document.getElementById("phase-focus-text"),
     phaseMilestoneText: document.getElementById("phase-milestone-text"),
     phaseWhyText: document.getElementById("phase-why-text"),
+    milestoneNextEyebrow: document.getElementById("milestone-next-eyebrow"),
+    milestoneNextTitle: document.getElementById("milestone-next-title"),
     totalWins: document.getElementById("total-wins"),
     historyPhase: document.getElementById("history-phase"),
     historyMode: document.getElementById("history-mode"),
@@ -306,13 +285,23 @@
     goalInputTitle: document.getElementById("goal-input-title"),
     goalInputWhy: document.getElementById("goal-input-why"),
     goalInputBaseline: document.getElementById("goal-input-baseline"),
-    goalInputMilestone: document.getElementById("goal-input-milestone"),
     myProfileForm: document.getElementById("my-profile-form"),
     myProfileStatus: document.getElementById("my-profile-status"),
-    addNextMilestoneBtn: document.getElementById("add-next-milestone-btn"),
+    acceptMilestoneBtn: document.getElementById("accept-milestone-btn"),
+    editMilestoneBtn: document.getElementById("edit-milestone-btn"),
+    cancelEditMilestoneBtn: document.getElementById("cancel-edit-milestone-btn"),
     moveFinalGoalBtn: document.getElementById("move-final-goal-btn"),
     milestoneNextForm: document.getElementById("milestone-next-form"),
     milestoneNextChoice: document.getElementById("milestone-next-choice"),
+    milestoneNextStatus: document.getElementById("milestone-next-status"),
+    roadmapPreviewCard: document.getElementById("roadmap-preview-card"),
+    roadmapPreviewList: document.getElementById("roadmap-preview-list"),
+    milestoneSuggestionLoading: document.getElementById("milestone-suggestion-loading"),
+    milestoneSuggestionCard: document.getElementById("milestone-suggestion-card"),
+    milestoneSuggestionTitle: document.getElementById("milestone-suggestion-title"),
+    milestoneSuggestionWhy: document.getElementById("milestone-suggestion-why"),
+    milestoneNextTitleInput: document.getElementById("next-milestone-title"),
+    milestoneNextWhyInput: document.getElementById("next-milestone-why"),
     completedGoalsEmpty: document.getElementById("completed-goals-empty"),
     completedGoalsList: document.getElementById("completed-goals-list"),
     completedGoalDetail: document.getElementById("completed-goal-detail"),
@@ -393,6 +382,9 @@
       phaseFocus: "",
       phaseMilestone: "",
       phaseWhy: "",
+      roadmap: [],
+      roadmapConfirmed: false,
+      currentMilestoneIndex: 0,
       createdAt: "",
       milestones: [],
       milestoneSelectionId: "",
@@ -403,7 +395,8 @@
       familyNotes: "",
       spiritualNotes: "",
       strengths: "",
-      obstacles: ""
+      obstacles: "",
+      contextNotes: ""
     };
   }
 
@@ -449,6 +442,12 @@
     const category = (goal.category || profile.category || inferGoalCategory({ title, milestone, baseline, profile })).trim();
     const createdAt = (goal.createdAt || profile.createdAt || "").toString().trim();
     const completedAt = (goal.completedAt || profile.goalCompletedAt || "").toString().trim();
+    const roadmap = normalizeRoadmapItems(goal.roadmap || profile.roadmap || profile.milestones || goal.milestones, profile);
+    const currentMilestoneIndex = Number.isInteger(goal.currentMilestoneIndex)
+      ? goal.currentMilestoneIndex
+      : Number.isInteger(profile.currentMilestoneIndex)
+        ? profile.currentMilestoneIndex
+        : getCurrentMilestoneIndexFromRoadmap(roadmap);
 
     return {
       id: (goal.id || createId("goal")).trim(),
@@ -460,6 +459,8 @@
       category,
       createdAt,
       completedAt,
+      roadmap,
+      currentMilestoneIndex,
       isPrimary: Boolean(goal.isPrimary),
       profile: {
         ...profile,
@@ -467,6 +468,9 @@
         why,
         baseline,
         phaseMilestone: milestone,
+        roadmap,
+        currentMilestoneIndex,
+        milestones: roadmap,
         timeline,
         category,
         createdAt,
@@ -523,6 +527,8 @@
       summary: (record.summary || profileSnapshot.why || profileSnapshot.phaseWhy || "").toString().trim(),
       profileSnapshot: {
         ...profileSnapshot,
+        roadmap: completedMilestones,
+        currentMilestoneIndex: Math.max(completedMilestones.length - 1, 0),
         milestones: completedMilestones,
         milestoneSelectionId: completedMilestones[completedMilestones.length - 1]?.id || ""
       },
@@ -670,6 +676,11 @@
     primaryProfile.why = primaryGoal.why || primaryProfile.why;
     primaryProfile.baseline = primaryGoal.baseline || primaryProfile.baseline;
     primaryProfile.phaseMilestone = primaryGoal.milestone || primaryProfile.phaseMilestone;
+    primaryProfile.roadmap = normalizeRoadmapItems(primaryGoal.roadmap || primaryProfile.roadmap, primaryProfile);
+    primaryProfile.currentMilestoneIndex = Number.isInteger(primaryGoal.currentMilestoneIndex)
+      ? primaryGoal.currentMilestoneIndex
+      : getCurrentMilestoneIndexFromRoadmap(primaryProfile.roadmap);
+    primaryProfile.milestones = primaryProfile.roadmap;
     primaryProfile.timeline = primaryGoal.timeline || primaryProfile.timeline;
     primaryProfile.category = primaryGoal.category || primaryProfile.category || inferGoalCategory(primaryGoal);
     primaryProfile.createdAt = primaryGoal.createdAt || primaryProfile.createdAt;
@@ -688,6 +699,10 @@
     primaryGoal.why = appState.profile.why || primaryGoal.why;
     primaryGoal.baseline = appState.profile.baseline || primaryGoal.baseline;
     primaryGoal.milestone = appState.profile.phaseMilestone || primaryGoal.milestone;
+    primaryGoal.roadmap = normalizeRoadmapItems(appState.profile.roadmap || primaryGoal.roadmap, appState.profile);
+    primaryGoal.currentMilestoneIndex = Number.isInteger(appState.profile.currentMilestoneIndex)
+      ? appState.profile.currentMilestoneIndex
+      : getCurrentMilestoneIndexFromRoadmap(primaryGoal.roadmap);
     primaryGoal.timeline = appState.profile.timeline || primaryGoal.timeline;
     primaryGoal.createdAt = appState.profile.createdAt || primaryGoal.createdAt || "";
     primaryGoal.completedAt = appState.profile.goalCompletedAt || "";
@@ -705,6 +720,9 @@
       why: primaryGoal.why,
       baseline: primaryGoal.baseline,
       phaseMilestone: primaryGoal.milestone,
+      roadmap: primaryGoal.roadmap,
+      currentMilestoneIndex: primaryGoal.currentMilestoneIndex,
+      milestones: primaryGoal.roadmap,
       timeline: primaryGoal.timeline,
       category: primaryGoal.category,
       createdAt: primaryGoal.createdAt,
@@ -750,7 +768,6 @@
     elements.goalInputTitle.value = goal?.title || "";
     elements.goalInputWhy.value = goal?.why || "";
     elements.goalInputBaseline.value = goal?.baseline || "";
-    elements.goalInputMilestone.value = goal?.milestone || "";
     openModal("goal-manager-modal");
   }
 
@@ -795,53 +812,141 @@
     }));
   }
 
-  function saveGoalFromForm() {
+  // Shared goal-upsert path so both Clarity Builder and Add Goal attach AI roadmaps to a real saved goal object.
+  function ensurePrimaryGoalRecordFromProfile() {
+    if (!hasMeaningfulProfileData(appState.profile)) {
+      return null;
+    }
+
     ensureMainGoalInGoalsList();
-    const goalId = elements.goalEditId.value.trim();
+    syncPrimaryGoalFromProfile();
+
+    const primaryGoal = getPrimaryGoal();
+    if (!primaryGoal) {
+      return null;
+    }
+
+    primaryGoal.isPrimary = true;
+    appState.primaryGoalId = primaryGoal.id;
+    appState.goals = appState.goals.map((goal) => ({
+      ...goal,
+      isPrimary: goal.id === primaryGoal.id
+    }));
+
+    return primaryGoal;
+  }
+
+  function getExplicitRoadmapValue(goalLike) {
+    if (Array.isArray(goalLike?.roadmap)) {
+      return goalLike.roadmap;
+    }
+    if (Array.isArray(goalLike?.profile?.roadmap)) {
+      return goalLike.profile.roadmap;
+    }
+    if (Array.isArray(goalLike?.profile?.milestones)) {
+      return goalLike.profile.milestones;
+    }
+    return [];
+  }
+
+  // Only treat a roadmap as reusable when it was explicitly saved before,
+  // or when legacy data clearly contains more than the default fallback nodes.
+  function hasValidRoadmap(goalLike) {
+    const rawRoadmap = getExplicitRoadmapValue(goalLike);
+    const normalizedRoadmap = (Array.isArray(rawRoadmap) ? rawRoadmap : [])
+      .map((milestone, index) => normalizeMilestone(milestone, index))
+      .filter((milestone) => milestone.label);
+    const roadmapLength = normalizedRoadmap.length;
+    const firstRoadmapItem = normalizedRoadmap[0] || null;
+    const hasConfirmedRoadmapFlag = Boolean(goalLike?.roadmapConfirmed || goalLike?.profile?.roadmapConfirmed);
+    const hasOnlyFallbackFinalNode = roadmapLength === 1
+      && firstRoadmapItem?.id === "milestone-final";
+    const hasOnlyFallbackDefaultNodes = roadmapLength === 2
+      && normalizedRoadmap[0]?.id === "milestone-1"
+      && normalizedRoadmap[1]?.id === "milestone-final";
+    const hasLegacySavedRoadmap = normalizedRoadmap.length > 1
+      && normalizedRoadmap.some((milestone) => !["milestone-1", "milestone-final"].includes(milestone.id));
+    const result = hasConfirmedRoadmapFlag || (!hasOnlyFallbackFinalNode && !hasOnlyFallbackDefaultNodes && hasLegacySavedRoadmap);
+
+    console.log("CB STEP: raw roadmap value", rawRoadmap);
+    console.log("CB STEP: roadmap length", roadmapLength);
+    console.log("CB STEP: first roadmap item", firstRoadmapItem);
+    console.log("CB STEP: result of hasValidRoadmap(goal)", result);
+
+    return result;
+  }
+
+  // Single source of truth for saving a goal record and, when needed,
+  // handing it into the AI roadmap approval flow used by Add Goal.
+  async function saveGoalThroughRoadmapPipeline(goalInput = {}, options = {}) {
+    console.log("CB STEP: entered shared save pipeline", {
+      goalInput,
+      options
+    });
+    ensureMainGoalInGoalsList();
+    const goalId = (goalInput.id || "").trim();
     const goalData = {
       id: goalId || createId("goal"),
-      title: elements.goalInputTitle.value.trim(),
-      why: elements.goalInputWhy.value.trim(),
-      baseline: elements.goalInputBaseline.value.trim(),
-      milestone: elements.goalInputMilestone.value.trim()
+      title: (goalInput.title || "").trim(),
+      why: (goalInput.why || "").trim(),
+      baseline: (goalInput.baseline || "").trim(),
+      timeline: (goalInput.timeline || "").trim()
     };
 
     if (!goalData.title || !goalData.why || !goalData.baseline) {
-      return;
+      console.error("missing goal fields", {
+        goalData,
+        hasTitle: Boolean(goalData.title),
+        hasWhy: Boolean(goalData.why),
+        hasBaseline: Boolean(goalData.baseline)
+      });
+      return null;
     }
 
-    const existingIndex = appState.goals.findIndex((goal) => goal.id === goalId);
+    const existingIndex = appState.goals.findIndex((goal) => goal.id === goalData.id);
     const existingGoal = existingIndex >= 0 ? appState.goals[existingIndex] : null;
-    const isPrimaryGoal = existingGoal ? existingGoal.isPrimary : false;
+    const goalProfileSeed = {
+      ...createEmptyProfile(),
+      ...(existingGoal?.profile || {}),
+      ...(goalInput.profile || {}),
+      goalTitle: goalData.title,
+      why: goalData.why,
+      baseline: goalData.baseline,
+      timeline: goalData.timeline || goalInput.profile?.timeline || existingGoal?.timeline || existingGoal?.profile?.timeline || "",
+      phaseMilestone: goalInput.profile?.phaseMilestone || existingGoal?.profile?.phaseMilestone || existingGoal?.milestone || "",
+      phaseWhy: goalInput.profile?.phaseWhy || existingGoal?.profile?.phaseWhy || "",
+      createdAt: existingGoal ? (existingGoal.createdAt || "") : ((goalInput.createdAt || "").trim() || getActiveDateTimestamp())
+    };
+    const goalCategory = inferGoalCategory({
+      ...goalData,
+      profile: goalProfileSeed
+    });
+    const shouldBePrimary = options.forcePrimary || (existingGoal ? existingGoal.isPrimary : !appState.primaryGoalId);
     const goalRecord = createGoalRecord({
       ...existingGoal,
       ...goalData,
-      createdAt: existingGoal ? (existingGoal.createdAt || "") : getActiveDateTimestamp(),
-      isPrimary: isPrimaryGoal,
-      category: inferGoalCategory(goalData),
+      createdAt: goalProfileSeed.createdAt,
+      isPrimary: shouldBePrimary,
+      category: goalCategory,
       profile: {
-        ...createEmptyProfile(),
-        ...(existingGoal?.profile || {}),
-        goalTitle: goalData.title,
-        why: goalData.why,
-        baseline: goalData.baseline,
-        phaseMilestone: goalData.milestone,
-        timeline: existingGoal?.timeline || "",
-        category: inferGoalCategory(goalData),
-        createdAt: existingGoal ? (existingGoal.createdAt || "") : getActiveDateTimestamp()
+        ...goalProfileSeed,
+        category: goalCategory
       }
     });
 
     if (existingIndex >= 0) {
       appState.goals[existingIndex] = goalRecord;
     } else {
-      goalRecord.isPrimary = false;
       appState.goals.push(goalRecord);
     }
 
-    if (!appState.primaryGoalId) {
+    if (goalRecord.isPrimary || !appState.primaryGoalId) {
       appState.primaryGoalId = goalRecord.id;
       goalRecord.isPrimary = true;
+      appState.goals = appState.goals.map((goal) => ({
+        ...goal,
+        isPrimary: goal.id === goalRecord.id
+      }));
     }
 
     if (goalRecord.isPrimary) {
@@ -855,9 +960,51 @@
     }
 
     saveState();
+    if (options.resetGoalForm) {
+      elements.goalManagerForm.reset();
+    }
+    if (options.closeGoalModal) {
+      closeModal("goal-manager-modal");
+    }
+
+    const hasRoadmap = hasValidRoadmap(existingGoal);
+    const shouldGenerateRoadmap = options.forceGenerateRoadmap === true || !hasRoadmap;
+    console.log("CB STEP: roadmap-present check result", {
+      hasRoadmap,
+      existingIndex,
+      shouldGenerateRoadmap,
+      goalId: goalRecord.id,
+      milestoneCount: getMilestonesFromProfile(goalRecord.profile).length,
+      forceGenerateRoadmap: options.forceGenerateRoadmap === true
+    });
+
+    if (shouldGenerateRoadmap) {
+      console.log("CB STEP: calling AI roadmap generator", {
+        goalId: goalRecord.id,
+        originSurface: options.originSurface || "goal-manager"
+      });
+      await openRoadmapApprovalPrompt({
+        originSurface: options.originSurface || "goal-manager",
+        goalId: goalRecord.id
+      });
+      return goalRecord;
+    }
+
     renderDashboard();
-    elements.goalManagerForm.reset();
-    closeModal("goal-manager-modal");
+    return goalRecord;
+  }
+
+  async function saveGoalFromForm() {
+    await saveGoalThroughRoadmapPipeline({
+      id: elements.goalEditId.value.trim(),
+      title: elements.goalInputTitle.value.trim(),
+      why: elements.goalInputWhy.value.trim(),
+      baseline: elements.goalInputBaseline.value.trim()
+    }, {
+      originSurface: "goal-manager",
+      resetGoalForm: true,
+      closeGoalModal: true
+    });
   }
 
   function setPrimaryGoal(goalId) {
@@ -1229,10 +1376,9 @@
       saveGoalFromForm();
     });
     elements.myProfileForm.addEventListener("submit", saveUserProfile);
-    elements.addNextMilestoneBtn.addEventListener("click", () => {
-      elements.milestoneNextChoice.classList.add("hidden");
-      elements.milestoneNextForm.classList.remove("hidden");
-    });
+    elements.acceptMilestoneBtn.addEventListener("click", acceptSuggestedMilestone);
+    elements.editMilestoneBtn.addEventListener("click", openMilestoneEditForm);
+    elements.cancelEditMilestoneBtn.addEventListener("click", showMilestoneSuggestionView);
     elements.moveFinalGoalBtn.addEventListener("click", moveToFinalGoalTarget);
     elements.milestoneNextForm.addEventListener("submit", saveNextMilestoneFromPrompt);
     elements.goalCelebrationNextBtn.addEventListener("click", openNextGoalBuilder);
@@ -1354,9 +1500,6 @@
   }
 
   function getClarityPlaceholder(step) {
-    if (step.key === "phaseMilestone") {
-      return getFallbackMilestone(appState.profile);
-    }
     return step.placeholder || "";
   }
 
@@ -1371,10 +1514,6 @@
     if (key === "gap") {
       return appState.profile.gap || appState.profile.phaseFocus || "";
     }
-    if (key === "phaseMilestone") {
-      const value = appState.profile.phaseMilestone || "";
-      return value === getFallbackMilestone(appState.profile) ? "" : value;
-    }
     return appState.profile[key] || "";
   }
 
@@ -1388,9 +1527,6 @@
       appState.profile.phaseFocus = cleaned;
     } else if (step.key === "why") {
       appState.profile.why = cleaned;
-      if (!appState.profile.phaseWhy) {
-        appState.profile.phaseWhy = cleaned;
-      }
     } else {
       appState.profile[step.key] = cleaned;
     }
@@ -1407,18 +1543,17 @@
     if (!appState.profile.gap && appState.profile.phaseFocus) {
       appState.profile.gap = appState.profile.phaseFocus;
     }
-    if (!appState.profile.phaseWhy && appState.profile.why) {
-      appState.profile.phaseWhy = appState.profile.why;
-    }
     appState.profile.category = inferGoalCategory({
       title: appState.profile.goalTitle,
       milestone: appState.profile.phaseMilestone,
       profile: appState.profile
     });
-    syncMilestoneTimeline();
+    if (appState.profile.phaseMilestone || getMilestonesFromProfile(appState.profile).length || appState.meta.onboardingCompleted) {
+      syncMilestoneTimeline();
+    }
   }
 
-  function moveClarityFlow(surface, direction) {
+  async function moveClarityFlow(surface, direction) {
     const key = surface === "modal" ? "modalStep" : "onboardingStep";
     const current = flowState[key];
     const nextStep = current + direction;
@@ -1430,17 +1565,45 @@
     }
 
     if (nextStep >= CLARITY_STEPS.length) {
-      appState.meta.onboardingCompleted = true;
       appState.meta.onboardingStep = CLARITY_STEPS.length - 1;
-      syncRoadmap();
       saveState();
-      ensureMissionForToday(true);
-      renderDashboard();
-      if (surface === "modal") {
-        closeModal("profile-modal");
-      } else {
-        showScreen("dashboard");
+
+      if (appState.profile.goalTitle && appState.profile.why && appState.profile.baseline) {
+        try {
+          console.log("CB STEP: finish clicked", {
+            surface,
+            onboardingStep: appState.meta.onboardingStep
+          });
+          const primaryGoal = ensurePrimaryGoalRecordFromProfile();
+          const clarityGoalInput = {
+            id: primaryGoal?.id || appState.primaryGoalId || "",
+            title: appState.profile.goalTitle,
+            why: appState.profile.why,
+            baseline: appState.profile.baseline,
+            timeline: appState.profile.timeline,
+            profile: {
+              ...createEmptyProfile(),
+              ...appState.profile
+            }
+          };
+
+          console.log("CB STEP: goal payload built", clarityGoalInput);
+          console.log("CB STEP: calling shared save pipeline", {
+            goalId: clarityGoalInput.id || "(new)",
+            title: clarityGoalInput.title
+          });
+          await saveGoalThroughRoadmapPipeline(clarityGoalInput, {
+            forcePrimary: true,
+            originSurface: surface
+          });
+          return;
+        } catch (error) {
+          console.error("any caught exceptions in the Clarity Builder finish flow", error);
+          throw error;
+        }
       }
+
+      finalizeClarityFlow(surface);
       return;
     }
 
@@ -1450,6 +1613,30 @@
       saveState();
     }
     renderClarityFlow(surface);
+  }
+
+  function getMilestonesFromProfile(profile) {
+    const source = Array.isArray(profile?.roadmap) && profile.roadmap.length
+      ? profile.roadmap
+      : profile?.milestones;
+    return Array.isArray(source)
+      ? source.map((milestone, index) => normalizeMilestone(milestone, index)).filter((milestone) => milestone.label)
+      : [];
+  }
+
+  function finalizeClarityFlow(surface) {
+    appState.meta.onboardingCompleted = true;
+    appState.meta.onboardingStep = CLARITY_STEPS.length - 1;
+    syncRoadmap();
+    saveState();
+    ensureMissionForToday(true);
+    renderDashboard();
+    console.log("Dashboard updated");
+    if (surface === "modal") {
+      closeModal("profile-modal");
+    } else {
+      showScreen("dashboard");
+    }
   }
 
   function resetAppState() {
@@ -1470,17 +1657,22 @@
   // Keep the new timeline data synced with the legacy milestone fields.
   function syncMilestoneTimeline() {
     const profile = appState.profile;
-    const existing = Array.isArray(profile.milestones) ? profile.milestones : [];
-    let milestones = existing
-      .map((milestone, index) => normalizeMilestone(milestone, index))
-      .filter((milestone) => milestone.label);
+    let milestones = normalizeRoadmapItems(profile.roadmap || profile.milestones, profile);
 
     if (!milestones.length) {
+      if (!profile.phaseMilestone && !appState.meta.onboardingCompleted) {
+        profile.roadmap = [];
+        profile.milestones = [];
+        profile.currentMilestoneIndex = 0;
+        profile.milestoneSelectionId = "";
+        return;
+      }
       milestones = buildDefaultMilestones(profile);
     }
 
-    const currentIndex = milestones.findIndex((milestone) => !milestone.completedAt);
-    const activeIndex = currentIndex === -1 ? Math.max(milestones.length - 1, 0) : currentIndex;
+    const activeIndex = Number.isInteger(profile.currentMilestoneIndex)
+      ? Math.min(Math.max(profile.currentMilestoneIndex, 0), Math.max(milestones.length - 1, 0))
+      : getCurrentMilestoneIndexFromRoadmap(milestones);
     let activeMilestone = milestones[activeIndex];
 
     if (activeMilestone && profile.phaseMilestone && activeMilestone.label !== profile.phaseMilestone) {
@@ -1500,7 +1692,9 @@
       activeMilestone = milestones[activeIndex];
     }
 
+    profile.roadmap = milestones;
     profile.milestones = milestones;
+    profile.currentMilestoneIndex = getCurrentMilestoneIndexFromRoadmap(milestones);
     profile.milestoneSelectionId = profile.milestoneSelectionId || activeMilestone?.id || "";
     profile.phaseMilestone = activeMilestone?.label || profile.phaseMilestone || getFallbackMilestone(profile);
   }
@@ -1509,17 +1703,83 @@
     return {
       id: (milestone?.id || `milestone-${index + 1}`).toString(),
       label: (milestone?.label || milestone?.title || "").toString().trim(),
-      detail: (milestone?.detail || "").toString().trim(),
-      completedAt: milestone?.completedAt || null
+      detail: (milestone?.detail || milestone?.whyItMatters || milestone?.why_it_matters || "").toString().trim(),
+      completedAt: milestone?.completedAt || null,
+      isFinalGoal: Boolean(milestone?.isFinalGoal || milestone?.is_final_goal)
     };
+  }
+
+  function getCurrentMilestoneIndexFromRoadmap(roadmap) {
+    const safeRoadmap = Array.isArray(roadmap) ? roadmap : [];
+    const nextIndex = safeRoadmap.findIndex((milestone) => !milestone.completedAt);
+    return nextIndex === -1 ? Math.max(safeRoadmap.length - 1, 0) : nextIndex;
+  }
+
+  function normalizeRoadmapItems(items, profile) {
+    const normalizedItems = (Array.isArray(items) ? items : [])
+      .map((item, index) => normalizeMilestone(item, index))
+      .filter((item) => item.label);
+    return ensureFinalGoalMilestone(normalizedItems, profile || appState.profile);
+  }
+
+  function getFinalGoalTarget(profile) {
+    return (profile?.target || profile?.goalTitle || "your goal").toString().trim();
+  }
+
+  function getFinalGoalDetail(profile) {
+    const finalGoalTarget = getFinalGoalTarget(profile);
+    if (profile?.timeline) {
+      return `Reach ${finalGoalTarget} by ${profile.timeline}.`;
+    }
+    return `Reach ${finalGoalTarget}.`;
+  }
+
+  // Keep the user's actual goal as the real endpoint so AI stops when the goal itself is next.
+  function ensureFinalGoalMilestone(milestones, profile) {
+    const normalizedMilestones = (Array.isArray(milestones) ? milestones : [])
+      .map((milestone, index) => normalizeMilestone(milestone, index))
+      .filter((milestone) => milestone.label);
+    const finalGoalTarget = getFinalGoalTarget(profile);
+
+    if (!finalGoalTarget) {
+      return normalizedMilestones;
+    }
+
+    if (!normalizedMilestones.length) {
+      return [{
+        id: "milestone-final",
+        label: finalGoalTarget,
+        detail: getFinalGoalDetail(profile),
+        completedAt: null,
+        isFinalGoal: true
+      }];
+    }
+
+    const lastIndex = normalizedMilestones.length - 1;
+    normalizedMilestones.forEach((milestone, index) => {
+      normalizedMilestones[index] = {
+        ...milestone,
+        isFinalGoal: index === lastIndex
+      };
+    });
+    normalizedMilestones[lastIndex] = {
+      ...normalizedMilestones[lastIndex],
+      id: normalizedMilestones[lastIndex].id || "milestone-final",
+      label: finalGoalTarget,
+      detail: normalizedMilestones[lastIndex].detail || getFinalGoalDetail(profile),
+      isFinalGoal: true
+    };
+
+    return normalizedMilestones;
+  }
+
+  function isFinalGoalMilestone(milestone, profile) {
+    return isSameMilestoneText(milestone?.label, getFinalGoalTarget(profile));
   }
 
   function buildDefaultMilestones(profile) {
     const currentLabel = profile.phaseMilestone || getFallbackMilestone(profile);
-    const goalLabel = profile.goalTitle || "your goal";
-    const timelineLabel = profile.timeline || "your timing";
-
-    return [
+    return ensureFinalGoalMilestone([
       {
         id: "milestone-1",
         label: currentLabel,
@@ -1527,24 +1787,25 @@
         completedAt: null
       },
       {
-        id: "milestone-2",
-        label: profile.timeline ? `Land it by ${shortLabel(timelineLabel, 34)}` : `Complete ${shortLabel(goalLabel, 42)}`,
-        detail: profile.timeline
-          ? `Carry the work across the finish line so the goal is real by ${profile.timeline}.`
-          : `Finish the path and make ${goalLabel} real.`,
+        id: "milestone-final",
+        label: getFinalGoalTarget(profile),
+        detail: getFinalGoalDetail(profile),
         completedAt: null
       }
-    ];
+    ], profile);
   }
 
   function getMilestones(profile) {
-    const milestones = Array.isArray(profile?.milestones) ? profile.milestones : [];
-    return milestones.length ? milestones : buildDefaultMilestones(profile || appState.profile);
+    const normalizedMilestones = normalizeRoadmapItems((profile || appState.profile).roadmap || getMilestonesFromProfile(profile || appState.profile), profile || appState.profile);
+    return normalizedMilestones.length ? normalizedMilestones : buildDefaultMilestones(profile || appState.profile);
   }
 
   function getCurrentMilestone(profile) {
     const milestones = getMilestones(profile || appState.profile);
-    return milestones.find((milestone) => !milestone.completedAt) || milestones[milestones.length - 1] || null;
+    const milestoneIndex = Number.isInteger((profile || appState.profile).currentMilestoneIndex)
+      ? Math.min(Math.max((profile || appState.profile).currentMilestoneIndex, 0), Math.max(milestones.length - 1, 0))
+      : getCurrentMilestoneIndexFromRoadmap(milestones);
+    return milestones[milestoneIndex] || milestones.find((milestone) => !milestone.completedAt) || milestones[milestones.length - 1] || null;
   }
 
   function getSelectedMilestone(profile) {
@@ -1687,6 +1948,519 @@
       return milestone.detail;
     }
     return profile.phaseWhy || getFallbackMilestoneReason(profile, milestone.label);
+  }
+
+  function sanitizePlannerValue(value) {
+    if (Array.isArray(value)) {
+      const cleanedList = value
+        .map((entry) => sanitizePlannerValue(entry))
+        .filter((entry) => entry !== undefined);
+      return cleanedList.length ? cleanedList : undefined;
+    }
+
+    if (value && typeof value === "object") {
+      const cleanedObject = Object.entries(value).reduce((accumulator, [key, entry]) => {
+        const cleanedEntry = sanitizePlannerValue(entry);
+        if (cleanedEntry !== undefined) {
+          accumulator[key] = cleanedEntry;
+        }
+        return accumulator;
+      }, {});
+      return Object.keys(cleanedObject).length ? cleanedObject : undefined;
+    }
+
+    const cleanedText = (value || "").toString().trim();
+    return cleanedText || undefined;
+  }
+
+  function buildMilestoneSuggestionPayload(completedMilestone, milestones, options = {}) {
+    const activeGoal = getMilestoneFlowGoal(options.goalId) || getPrimaryGoal() || createGoalRecord({ profile: appState.profile });
+    const goalProfile = getProfileForGoal(activeGoal);
+    const finalMilestone = milestones[milestones.length - 1] || null;
+    const mode = options.mode || "next";
+    const payload = sanitizePlannerValue({
+      requestType: mode === "initial" ? "first_milestone" : "next_milestone",
+      primaryGoal: activeGoal.title || goalProfile.goalTitle || appState.profile.goalTitle,
+      primaryGoalWhy: activeGoal.why || goalProfile.why || appState.profile.why,
+      baseline: activeGoal.baseline || goalProfile.baseline || appState.profile.baseline,
+      finalGoal: getFinalGoalTarget(goalProfile) || finalMilestone?.label || activeGoal.title,
+      completedMilestone: completedMilestone?.label,
+      completedMilestoneWhy: completedMilestone?.detail,
+      currentState: appState.daily[activeDateKey] || {},
+      profile: {
+        goalTitle: activeGoal.title || goalProfile.goalTitle,
+        why: activeGoal.why || goalProfile.why,
+        baseline: activeGoal.baseline || goalProfile.baseline,
+        target: goalProfile.target,
+        timeline: activeGoal.timeline || goalProfile.timeline,
+        phaseName: goalProfile.phaseName,
+        phaseFocus: goalProfile.phaseFocus,
+        phaseMilestone: goalProfile.phaseMilestone,
+        phaseWhy: goalProfile.phaseWhy,
+        category: activeGoal.category || goalProfile.category,
+        contextNotes: goalProfile.contextNotes || appState.profile.contextNotes
+      },
+      userProfile: appState.userProfile || {},
+      supportingGoals: getSupportingGoals().map((goal) => ({
+        title: goal.title,
+        why: goal.why,
+        baseline: goal.baseline,
+        milestone: goal.milestone,
+        timeline: goal.timeline,
+        category: goal.category
+      })),
+      supportingContext: {
+        appDate: activeDateKey,
+        timeline: activeGoal.timeline || goalProfile.timeline,
+        phaseName: goalProfile.phaseName,
+        phaseFocus: goalProfile.phaseFocus,
+        contextNotes: goalProfile.contextNotes || appState.profile.contextNotes,
+        latestLifeUpdate: appState.lifeUpdates[0] || null
+      }
+    });
+
+    return payload || {};
+  }
+
+  function buildRoadmapGenerationPayload(goalId) {
+    const activeGoal = getMilestoneFlowGoal(goalId) || getPrimaryGoal() || createGoalRecord({ profile: appState.profile });
+    const goalProfile = getProfileForGoal(activeGoal);
+    const finalGoal = goalProfile.target || activeGoal.title || goalProfile.goalTitle;
+
+    return sanitizePlannerValue({
+      goal_title: activeGoal.title || goalProfile.goalTitle,
+      why: activeGoal.why || goalProfile.why,
+      baseline: activeGoal.baseline || goalProfile.baseline,
+      final_goal: finalGoal,
+      timeline: activeGoal.timeline || goalProfile.timeline,
+      currentState: appState.daily[activeDateKey] || {},
+      profile: {
+        goalTitle: activeGoal.title || goalProfile.goalTitle,
+        why: activeGoal.why || goalProfile.why,
+        baseline: activeGoal.baseline || goalProfile.baseline,
+        target: finalGoal,
+        timeline: activeGoal.timeline || goalProfile.timeline,
+        phaseName: goalProfile.phaseName,
+        phaseFocus: goalProfile.phaseFocus,
+        category: activeGoal.category || goalProfile.category,
+        contextNotes: goalProfile.contextNotes || appState.profile.contextNotes
+      },
+      userProfile: appState.userProfile || {},
+      supportingContext: {
+        appDate: activeDateKey,
+        timeline: activeGoal.timeline || goalProfile.timeline,
+        contextNotes: goalProfile.contextNotes || appState.profile.contextNotes,
+        latestLifeUpdate: appState.lifeUpdates[0] || null
+      }
+    }) || {};
+  }
+
+  async function requestRoadmapGeneration(payload) {
+    if (window.location.protocol === "file:") {
+      throw new Error("AI roadmap generation needs the local server running. Start the app with npm start or node server.js.");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 22000);
+
+    try {
+      const response = await window.fetch(AI_ROADMAP_ROUTE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.details || "Unable to generate the roadmap.");
+      }
+
+      return data;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("The AI roadmap planner timed out.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  async function requestNextMilestoneSuggestion(payload) {
+    if (window.location.protocol === "file:") {
+      throw new Error("AI suggestions need the local server running. Start the app with npm start or node server.js.");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 18000);
+
+    try {
+      const response = await window.fetch(AI_MILESTONE_ROUTE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.details || "Unable to generate the next milestone.");
+      }
+
+      return {
+        title: (data.next_milestone || "").toString().trim(),
+        why: (data.why_it_matters || "").toString().trim()
+      };
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("The AI milestone planner timed out.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  function setMilestoneAdvanceStatus(title, body) {
+    if (!title && !body) {
+      elements.milestoneNextStatus.classList.add("hidden");
+      elements.milestoneNextStatus.innerHTML = "";
+      return;
+    }
+
+    elements.milestoneNextStatus.innerHTML = `
+      ${title ? `<strong>${escapeHtml(title)}</strong>` : ""}
+      ${body ? `<span>${escapeHtml(body)}</span>` : ""}
+    `;
+    elements.milestoneNextStatus.classList.remove("hidden");
+  }
+
+  function resetMilestoneAdvanceModal() {
+    setMilestoneAdvanceStatus("", "");
+    elements.roadmapPreviewCard.classList.add("hidden");
+    elements.roadmapPreviewList.innerHTML = "";
+    elements.milestoneSuggestionLoading.classList.add("hidden");
+    elements.milestoneSuggestionCard.classList.add("hidden");
+    elements.milestoneNextChoice.classList.add("hidden");
+    elements.milestoneNextForm.classList.add("hidden");
+    elements.moveFinalGoalBtn.classList.remove("hidden");
+    elements.acceptMilestoneBtn.disabled = false;
+    elements.milestoneNextEyebrow.textContent = "AI Milestone Planner";
+    elements.milestoneNextTitle.textContent = "Milestone complete. Here's the next step.";
+    elements.acceptMilestoneBtn.textContent = "Accept Milestone";
+    elements.editMilestoneBtn.textContent = "Edit Milestone";
+    elements.editMilestoneBtn.classList.remove("hidden");
+    elements.milestoneSuggestionTitle.textContent = "Next milestone";
+    elements.milestoneSuggestionWhy.textContent = "Why it matters will appear here.";
+    elements.milestoneNextForm.reset();
+  }
+
+  function configureMilestoneAdvanceModal() {
+    const mode = flowState.pendingMilestoneAdvance?.mode || "next";
+    const isInitial = mode === "initial";
+
+    elements.milestoneNextEyebrow.textContent = "AI Milestone Planner";
+    elements.milestoneNextTitle.textContent = isInitial
+      ? "Here's your first milestone."
+      : "Milestone complete. Here's the next step.";
+    elements.moveFinalGoalBtn.classList.toggle("hidden", isInitial);
+  }
+
+  function renderRoadmapPreview(roadmapItems) {
+    elements.roadmapPreviewList.innerHTML = "";
+    roadmapItems.forEach((milestone, index) => {
+      const step = document.createElement("article");
+      step.className = `roadmap-preview-step${milestone.isFinalGoal ? " is-final" : ""}`;
+      step.innerHTML = `
+        <div class="roadmap-preview-head">
+          <div>
+            <strong>${escapeHtml(milestone.label)}</strong>
+          </div>
+          <span class="roadmap-step-index">${index + 1}</span>
+        </div>
+        <p class="muted">${escapeHtml(milestone.detail || "Meaningful progress toward the final goal.")}</p>
+        ${milestone.isFinalGoal ? '<span class="chip">Final Goal</span>' : ""}
+      `;
+      elements.roadmapPreviewList.appendChild(step);
+    });
+    elements.roadmapPreviewCard.classList.remove("hidden");
+  }
+
+  function normalizeGeneratedRoadmap(data, goalId) {
+    const targetGoal = getMilestoneFlowGoal(goalId);
+    const goalProfile = getProfileForGoal(targetGoal);
+    const milestones = Array.isArray(data?.milestones)
+      ? data.milestones.map((milestone, index) => normalizeMilestone({
+        id: `roadmap-${index + 1}`,
+        title: milestone.title,
+        detail: milestone.why_it_matters,
+        isFinalGoal: milestone.is_final_goal
+      }, index))
+      : [];
+    return normalizeRoadmapItems(milestones, {
+      ...goalProfile,
+      target: data?.final_goal || goalProfile.target || targetGoal?.title || goalProfile.goalTitle
+    });
+  }
+
+  async function openRoadmapApprovalPrompt(options = {}) {
+    const ensuredGoal = options.goalId ? getMilestoneFlowGoal(options.goalId) : ensurePrimaryGoalRecordFromProfile();
+    flowState.pendingRoadmapApproval = {
+      goalId: options.goalId || ensuredGoal?.id || appState.primaryGoalId || "",
+      originSurface: options.originSurface || ""
+    };
+    resetMilestoneAdvanceModal();
+    elements.milestoneNextEyebrow.textContent = "AI Roadmap Planner";
+    elements.milestoneNextTitle.textContent = "Here's the path.";
+    elements.acceptMilestoneBtn.textContent = "Accept Roadmap";
+    elements.editMilestoneBtn.classList.add("hidden");
+    elements.moveFinalGoalBtn.classList.add("hidden");
+    elements.milestoneSuggestionLoading.classList.remove("hidden");
+    openModal("milestone-next-modal");
+
+    try {
+      console.log("AI roadmap request started", {
+        goalId: flowState.pendingRoadmapApproval.goalId
+      });
+      const roadmapResponse = await requestRoadmapGeneration(
+        buildRoadmapGenerationPayload(flowState.pendingRoadmapApproval.goalId)
+      );
+
+      if (!flowState.pendingRoadmapApproval) {
+        return;
+      }
+
+      console.log("CB STEP: AI roadmap response received", roadmapResponse);
+      const roadmap = normalizeGeneratedRoadmap(roadmapResponse, flowState.pendingRoadmapApproval.goalId);
+      if (!Array.isArray(roadmapResponse?.milestones) || !roadmap.length) {
+        console.error("invalid roadmap response", {
+          roadmapResponse,
+          normalizedRoadmap: roadmap
+        });
+      }
+      flowState.pendingRoadmapApproval.roadmap = roadmap;
+      elements.milestoneSuggestionLoading.classList.add("hidden");
+      renderRoadmapPreview(roadmap);
+      elements.milestoneNextChoice.classList.remove("hidden");
+    } catch (error) {
+      if (!flowState.pendingRoadmapApproval) {
+        return;
+      }
+      console.error("roadmap request failure", error);
+      elements.milestoneSuggestionLoading.classList.add("hidden");
+      elements.acceptMilestoneBtn.disabled = true;
+      setMilestoneAdvanceStatus("AI roadmap unavailable.", error.message);
+      elements.milestoneNextChoice.classList.remove("hidden");
+      window.alert("AI roadmap request failed. Check console.");
+    }
+  }
+
+  function acceptRoadmapApproval() {
+    const approval = flowState.pendingRoadmapApproval;
+    if (!approval?.roadmap?.length) {
+      return;
+    }
+
+    saveGoalRoadmapState(approval.goalId, approval.roadmap);
+    console.log("CB STEP: roadmap saved to goal", {
+      goalId: approval.goalId,
+      milestoneCount: approval.roadmap.length
+    });
+    saveState();
+    flowState.pendingRoadmapApproval = null;
+    closeModal("milestone-next-modal");
+
+    if (approval.originSurface === "onboarding" || approval.originSurface === "modal") {
+      console.log("CB STEP: dashboard render after roadmap save");
+      finalizeClarityFlow(approval.originSurface);
+    } else {
+      renderDashboard();
+      console.log("CB STEP: dashboard render after roadmap save");
+    }
+  }
+
+  function renderMilestoneSuggestionCard(suggestion) {
+    elements.milestoneSuggestionTitle.textContent = suggestion?.title || "No suggestion available";
+    elements.milestoneSuggestionWhy.textContent = suggestion?.why || "Edit the milestone if you want to shape the next step yourself.";
+    elements.milestoneSuggestionCard.classList.remove("hidden");
+  }
+
+  function populateMilestoneEditForm(suggestion) {
+    elements.milestoneNextTitleInput.value = suggestion?.title || "";
+    elements.milestoneNextWhyInput.value = suggestion?.why || "";
+  }
+
+  function showMilestoneSuggestionView() {
+    configureMilestoneAdvanceModal();
+    elements.milestoneNextForm.classList.add("hidden");
+    elements.milestoneSuggestionLoading.classList.add("hidden");
+    elements.milestoneNextChoice.classList.remove("hidden");
+    elements.milestoneSuggestionCard.classList.toggle("hidden", !flowState.pendingMilestoneAdvance?.suggestion);
+    elements.acceptMilestoneBtn.disabled = !flowState.pendingMilestoneAdvance?.suggestion?.title;
+  }
+
+  function openMilestoneEditForm() {
+    const suggestion = flowState.pendingMilestoneAdvance?.suggestion || { title: "", why: "" };
+    configureMilestoneAdvanceModal();
+    populateMilestoneEditForm(suggestion);
+    elements.milestoneNextChoice.classList.add("hidden");
+    elements.milestoneSuggestionLoading.classList.add("hidden");
+    elements.milestoneNextForm.classList.remove("hidden");
+    window.requestAnimationFrame(() => elements.milestoneNextTitleInput.focus());
+  }
+
+  function normalizeMilestoneText(value) {
+    return (value || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function isSameMilestoneText(left, right) {
+    const normalizedLeft = normalizeMilestoneText(left);
+    const normalizedRight = normalizeMilestoneText(right);
+    return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+  }
+
+  function getPendingFinalMilestone(milestones) {
+    const finalMilestoneId = flowState.pendingMilestoneAdvance?.finalMilestoneId;
+    return milestones.find((milestone) => milestone.id === finalMilestoneId) || milestones[milestones.length - 1] || null;
+  }
+
+  function getGoalById(goalId) {
+    return appState.goals.find((goal) => goal.id === goalId) || null;
+  }
+
+  function getMilestoneFlowGoal(goalId) {
+    if (goalId) {
+      return getGoalById(goalId);
+    }
+    return getPrimaryGoal() || createGoalRecord({ profile: appState.profile });
+  }
+
+  function getProfileForGoal(goal) {
+    if (goal?.isPrimary && goal.id === appState.primaryGoalId) {
+      return appState.profile;
+    }
+    return {
+      ...createEmptyProfile(),
+      ...(goal?.profile || {})
+    };
+  }
+
+  function getActiveRoadmapMilestone(roadmap) {
+    const safeRoadmap = Array.isArray(roadmap) ? roadmap : [];
+    const activeIndex = getCurrentMilestoneIndexFromRoadmap(safeRoadmap);
+    return safeRoadmap[activeIndex] || safeRoadmap[0] || null;
+  }
+
+  function buildMilestoneFlowMilestones(goal, options = {}) {
+    const goalProfile = getProfileForGoal(goal);
+    const existingMilestones = getMilestonesFromProfile(goalProfile);
+    if (existingMilestones.length) {
+      return ensureFinalGoalMilestone(existingMilestones, goalProfile);
+    }
+
+    return ensureFinalGoalMilestone([
+      {
+        id: "milestone-final",
+        label: getFinalGoalTarget(goalProfile),
+        detail: getFinalGoalDetail(goalProfile),
+        completedAt: null
+      }
+    ], goalProfile);
+  }
+
+  function saveGoalMilestoneState(goalId, milestone) {
+    const goal = getGoalById(goalId);
+    if (!goal || !milestone?.label) {
+      return;
+    }
+
+    const goalProfile = {
+      ...createEmptyProfile(),
+      ...(goal.profile || {}),
+      goalTitle: goal.title,
+      why: goal.why,
+      baseline: goal.baseline,
+      phaseMilestone: milestone.label,
+      phaseWhy: milestone.detail || "",
+      timeline: goal.timeline || goal.profile?.timeline || "",
+      category: goal.category || inferGoalCategory(goal),
+      createdAt: goal.createdAt || goal.profile?.createdAt || ""
+    };
+
+    goalProfile.roadmap = ensureFinalGoalMilestone(Array.isArray(milestone.milestones)
+      ? milestone.milestones.map((entry, index) => normalizeMilestone(entry, index))
+      : buildDefaultMilestones(goalProfile), goalProfile);
+    goalProfile.milestones = goalProfile.roadmap;
+    goalProfile.currentMilestoneIndex = Math.max(goalProfile.roadmap.findIndex((entry) => entry.id === milestone.id), 0);
+    goalProfile.milestoneSelectionId = milestone.id || goalProfile.roadmap[goalProfile.currentMilestoneIndex]?.id || "";
+
+    goal.milestone = milestone.label;
+    goal.roadmap = goalProfile.roadmap;
+    goal.currentMilestoneIndex = goalProfile.currentMilestoneIndex;
+    goal.profile = goalProfile;
+
+    if (goal.isPrimary) {
+      appState.profile = {
+        ...createEmptyProfile(),
+        ...goalProfile
+      };
+      syncDerivedProfileFields();
+      syncPrimaryGoalFromProfile();
+    }
+  }
+
+  function saveGoalRoadmapState(goalId, roadmapItems) {
+    const goal = getMilestoneFlowGoal(goalId);
+    if (!goal) {
+      return;
+    }
+
+    const goalProfile = {
+      ...createEmptyProfile(),
+      ...getProfileForGoal(goal),
+      goalTitle: goal.title,
+      why: goal.why,
+      baseline: goal.baseline,
+      target: goal.profile?.target || getProfileForGoal(goal).target || goal.title,
+      timeline: goal.timeline || goal.profile?.timeline || "",
+      category: goal.category || inferGoalCategory(goal),
+      createdAt: goal.createdAt || goal.profile?.createdAt || ""
+    };
+    const roadmap = normalizeRoadmapItems(roadmapItems, goalProfile);
+    const currentMilestone = getActiveRoadmapMilestone(roadmap);
+
+    goal.roadmap = roadmap;
+    goal.roadmapConfirmed = true;
+    goal.currentMilestoneIndex = getCurrentMilestoneIndexFromRoadmap(roadmap);
+    goal.milestone = currentMilestone?.label || "";
+    goal.profile = {
+      ...goalProfile,
+      roadmap,
+      roadmapConfirmed: true,
+      milestones: roadmap,
+      currentMilestoneIndex: goal.currentMilestoneIndex,
+      phaseMilestone: currentMilestone?.label || "",
+      phaseWhy: currentMilestone?.detail || ""
+    };
+
+    if (goal.isPrimary) {
+      appState.profile = {
+        ...createEmptyProfile(),
+        ...goal.profile
+      };
+      syncDerivedProfileFields();
+      syncPrimaryGoalFromProfile();
+    }
   }
 
   function shortLabel(value, limit) {
@@ -1833,6 +2607,8 @@
       category: activeGoal.category || appState.profile.category,
       createdAt,
       goalCompletedAt: completedAt,
+      roadmap: completedMilestones,
+      currentMilestoneIndex: Math.max(completedMilestones.length - 1, 0),
       milestoneSelectionId: completedMilestones[completedMilestones.length - 1]?.id || "",
       milestones: completedMilestones
     };
@@ -1944,7 +2720,7 @@
     openGoalCelebration(archivedGoal);
   }
 
-  // Complete the active milestone, advance focus, and preserve existing profile compatibility.
+  // Complete the current stored roadmap item and advance to the next saved milestone without re-calling AI.
   function completeCurrentMilestone() {
     syncMilestoneTimeline();
     const profile = appState.profile;
@@ -1958,18 +2734,28 @@
       return;
     }
 
-    milestones[currentIndex].completedAt = getActiveDateTimestamp();
-    const isFinalMilestone = currentIndex === milestones.length - 1;
-    const nextMilestone = milestones[currentIndex + 1] || milestones[currentIndex];
+    const completedAt = getActiveDateTimestamp();
+    milestones[currentIndex] = {
+      ...milestones[currentIndex],
+      detail: milestones[currentIndex].detail || getMilestoneDetail(milestones[currentIndex], profile),
+      completedAt
+    };
+    // Use the actual goal target as the stopping condition, even if older milestone arrays are out of shape.
+    const isFinalMilestone = currentIndex === milestones.length - 1 || isFinalGoalMilestone(milestones[currentIndex], profile);
+    const completedMilestone = milestones[currentIndex];
 
     if (isFinalMilestone) {
       completePrimaryGoal(milestones);
       return;
     }
 
+    const nextMilestone = milestones[currentIndex + 1] || milestones[milestones.length - 1] || null;
+    profile.roadmap = milestones;
     profile.milestones = milestones;
-    profile.milestoneSelectionId = nextMilestone.id;
-    profile.phaseMilestone = nextMilestone.label;
+    profile.currentMilestoneIndex = Math.min(currentIndex + 1, Math.max(milestones.length - 1, 0));
+    profile.milestoneSelectionId = nextMilestone?.id || "";
+    profile.phaseMilestone = nextMilestone?.label || profile.phaseMilestone;
+    profile.phaseWhy = nextMilestone?.detail || "";
     profile.goalCompletedAt = "";
 
     syncPrimaryGoalFromProfile();
@@ -1977,42 +2763,149 @@
     renderDashboard();
     renderTimeline();
     pulseElement(elements.timelineCompleteBtn.closest(".timeline-detail"), "timeline-complete-pop");
-
-    showTimelineFeedback("Milestone complete.", "What's next?");
-    openMilestoneAdvancePrompt();
+    showTimelineFeedback("Milestone complete.", "The next roadmap step is now active.");
   }
 
-  function openMilestoneAdvancePrompt() {
+  async function openMilestoneAdvancePrompt(options = {}) {
+    const targetGoal = getMilestoneFlowGoal(options.goalId);
+    const milestones = (Array.isArray(options.milestones)
+      ? options.milestones
+      : buildMilestoneFlowMilestones(targetGoal, options)
+    ).map((milestone, index) => normalizeMilestone(milestone, index));
+    const finalMilestone = milestones[milestones.length - 1] || null;
     flowState.pendingMilestoneAdvance = {
+      mode: options.mode || "next",
+      originSurface: options.originSurface || "",
+      goalId: options.goalId || appState.primaryGoalId || "",
       profileId: appState.primaryGoalId || "primary",
-      finalMilestoneId: getMilestones(appState.profile)[getMilestones(appState.profile).length - 1]?.id || ""
+      completedMilestoneId: options.completedMilestone?.id || "",
+      finalMilestoneId: finalMilestone?.id || "",
+      suggestion: null
     };
-    elements.milestoneNextChoice.classList.remove("hidden");
-    elements.milestoneNextForm.classList.add("hidden");
-    elements.milestoneNextForm.reset();
+
+    resetMilestoneAdvanceModal();
+    configureMilestoneAdvanceModal();
+    elements.milestoneSuggestionLoading.classList.remove("hidden");
     openModal("milestone-next-modal");
+
+    try {
+      const suggestion = await requestNextMilestoneSuggestion(
+        buildMilestoneSuggestionPayload(options.completedMilestone, milestones, options)
+      );
+
+      if (!flowState.pendingMilestoneAdvance) {
+        return;
+      }
+
+      flowState.pendingMilestoneAdvance.suggestion = suggestion;
+      populateMilestoneEditForm(suggestion);
+      renderMilestoneSuggestionCard(suggestion);
+      showMilestoneSuggestionView();
+
+      if (flowState.pendingMilestoneAdvance?.mode !== "initial" && isSameMilestoneText(suggestion.title, finalMilestone?.label)) {
+        setMilestoneAdvanceStatus(
+          "This suggestion points straight at the final goal.",
+          "Accept it to move directly to the finish line, or edit it into one more checkpoint."
+        );
+      }
+    } catch (error) {
+      if (!flowState.pendingMilestoneAdvance) {
+        return;
+      }
+
+      elements.acceptMilestoneBtn.disabled = true;
+      setMilestoneAdvanceStatus("AI suggestion unavailable.", error.message);
+      showMilestoneSuggestionView();
+    }
+  }
+
+  function acceptSuggestedMilestone() {
+    if (flowState.pendingRoadmapApproval) {
+      acceptRoadmapApproval();
+      return;
+    }
+    const suggestion = flowState.pendingMilestoneAdvance?.suggestion;
+    if (!suggestion?.title) {
+      openMilestoneEditForm();
+      return;
+    }
+
+    applyApprovedMilestone(suggestion);
   }
 
   function moveToFinalGoalTarget() {
+    const pendingAdvance = flowState.pendingMilestoneAdvance;
+    const targetGoal = getMilestoneFlowGoal(pendingAdvance?.goalId);
+    const targetProfile = pendingAdvance?.goalId ? getProfileForGoal(targetGoal) : appState.profile;
+    const milestones = getMilestones(targetProfile).map((milestone, index) => normalizeMilestone(milestone, index));
+    const finalMilestone = getPendingFinalMilestone(milestones);
+
+    if (finalMilestone) {
+      if (pendingAdvance?.goalId) {
+        saveGoalMilestoneState(pendingAdvance.goalId, {
+          id: finalMilestone.id,
+          label: finalMilestone.label,
+          detail: finalMilestone.detail || "",
+          milestones
+        });
+      } else {
+        targetProfile.milestones = milestones;
+        targetProfile.milestoneSelectionId = finalMilestone.id;
+        targetProfile.phaseMilestone = finalMilestone.label;
+        targetProfile.phaseWhy = finalMilestone.detail || "";
+        syncPrimaryGoalFromProfile();
+      }
+      saveState();
+    }
+
     flowState.pendingMilestoneAdvance = null;
     closeModal("milestone-next-modal");
-    renderDashboard();
-    renderTimeline();
+    if (pendingAdvance?.mode === "initial" && (pendingAdvance.originSurface === "onboarding" || pendingAdvance.originSurface === "modal")) {
+      finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
+    } else {
+      renderDashboard();
+      renderTimeline();
+    }
+    showTimelineFeedback("Path updated.", "Final goal is now the active target.");
   }
 
   function saveNextMilestoneFromPrompt(event) {
     event.preventDefault();
-    const formData = new FormData(elements.milestoneNextForm);
-    const title = (formData.get("title") || "").toString().trim();
-    const why = (formData.get("why") || "").toString().trim();
+    const title = elements.milestoneNextTitleInput.value.trim();
+    const why = elements.milestoneNextWhyInput.value.trim();
+    if (!title) {
+      elements.milestoneNextTitleInput.focus();
+      return;
+    }
+
+    applyApprovedMilestone({ title, why });
+  }
+
+  function applyApprovedMilestone(suggestion) {
+    const pendingAdvance = flowState.pendingMilestoneAdvance;
+    if (!pendingAdvance) {
+      return;
+    }
+
+    const targetGoal = getMilestoneFlowGoal(pendingAdvance.goalId);
+    const targetProfile = pendingAdvance.goalId ? getProfileForGoal(targetGoal) : appState.profile;
+    const milestones = getMilestones(targetProfile).map((milestone, index) => normalizeMilestone(milestone, index));
+    const finalMilestone = getPendingFinalMilestone(milestones);
+    const title = (suggestion?.title || "").trim();
+    const why = (suggestion?.why || "").trim();
+
     if (!title) {
       return;
     }
 
-    const profile = appState.profile;
-    const milestones = getMilestones(profile).map((milestone) => ({ ...milestone }));
-    const finalIndex = milestones.length - 1;
-    const finalMilestone = milestones[finalIndex];
+    if (isSameMilestoneText(title, finalMilestone?.label)) {
+      moveToFinalGoalTarget();
+      return;
+    }
+
+    const insertAt = finalMilestone
+      ? milestones.findIndex((milestone) => milestone.id === finalMilestone.id)
+      : milestones.length;
     const nextMilestone = {
       id: createId("milestone"),
       label: title,
@@ -2020,23 +2913,33 @@
       completedAt: null
     };
 
-    milestones.splice(Math.max(finalIndex, 0), 0, nextMilestone);
-    profile.milestones = milestones;
-    profile.milestoneSelectionId = nextMilestone.id;
-    profile.phaseMilestone = nextMilestone.label;
-    if (why) {
-      profile.phaseWhy = why;
-    }
-    if (finalMilestone?.id === profile.milestoneSelectionId) {
-      profile.milestoneSelectionId = nextMilestone.id;
+    milestones.splice(Math.max(insertAt, 0), 0, nextMilestone);
+    if (pendingAdvance.goalId) {
+      saveGoalMilestoneState(pendingAdvance.goalId, {
+        id: nextMilestone.id,
+        label: nextMilestone.label,
+        detail: why,
+        milestones
+      });
+    } else {
+      targetProfile.milestones = milestones;
+      targetProfile.milestoneSelectionId = nextMilestone.id;
+      targetProfile.phaseMilestone = nextMilestone.label;
+      targetProfile.phaseWhy = why;
+      syncPrimaryGoalFromProfile();
     }
 
-    syncPrimaryGoalFromProfile();
     saveState();
+    flowState.pendingMilestoneAdvance = null;
     closeModal("milestone-next-modal");
-    renderDashboard();
-    renderTimeline();
-    showTimelineFeedback("Path updated.", "The next real milestone is now in focus.");
+    if (pendingAdvance.mode === "initial" && (pendingAdvance.originSurface === "onboarding" || pendingAdvance.originSurface === "modal")) {
+      finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
+      showTimelineFeedback("Path set.", "Your first real milestone is now active.");
+    } else {
+      renderDashboard();
+      renderTimeline();
+      showTimelineFeedback("Path updated.", "The next real milestone is now in focus.");
+    }
   }
 
   function showTimelineFeedback(title, body) {
@@ -3159,6 +4062,11 @@
     const modal = document.getElementById(id);
     modal.classList.add("hidden");
     modal.setAttribute("aria-hidden", "true");
+    if (id === "milestone-next-modal") {
+      resetMilestoneAdvanceModal();
+      flowState.pendingMilestoneAdvance = null;
+      flowState.pendingRoadmapApproval = null;
+    }
     if (id === "goal-celebration-modal") {
       modal.classList.remove("is-entering");
     }
@@ -3197,3 +4105,4 @@
     });
   }
 })();
+

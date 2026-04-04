@@ -389,11 +389,6 @@
           <textarea id="goal-input-baseline" name="baseline" rows="3" maxlength="220" placeholder="Leads are inconsistent and follow-up is loose." required></textarea>
         </div>
 
-        <div class="field-group">
-          <label for="goal-input-milestone">Milestone <span class="optional">Optional</span></label>
-          <textarea id="goal-input-milestone" name="milestone" rows="3" maxlength="220" placeholder="Book 3 strong calls this month"></textarea>
-        </div>
-
         <div class="form-actions">
           <button class="btn btn-primary" type="submit">Save Goal</button>
         </div>
@@ -653,33 +648,60 @@
   </div>
 
   <div id="milestone-next-modal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close-modal="milestone-next-modal"></div>
-    <div class="modal-panel panel">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel panel milestone-next-panel">
       <div class="modal-head">
         <div>
-          <p class="eyebrow">Milestone Complete</p>
-          <h2>What&apos;s next?</h2>
+          <p id="milestone-next-eyebrow" class="eyebrow">AI Milestone Planner</p>
+          <h2 id="milestone-next-title">Milestone complete. Here&apos;s the next step.</h2>
         </div>
-        <button class="icon-btn" type="button" data-close-modal="milestone-next-modal" aria-label="Close">&times;</button>
       </div>
 
       <div class="life-update-form">
-        <div id="milestone-next-choice" class="goal-item-actions">
-          <button id="add-next-milestone-btn" class="btn btn-primary" type="button">Add another milestone</button>
-          <button id="move-final-goal-btn" class="btn btn-secondary" type="button">Move to final goal</button>
+        <div id="milestone-next-status" class="timeline-feedback hidden" aria-live="polite"></div>
+
+        <article id="roadmap-preview-card" class="milestone-suggestion-card hidden">
+          <p class="card-label">Roadmap Preview</p>
+          <div id="roadmap-preview-list" class="roadmap-preview-list"></div>
+        </article>
+
+        <article id="milestone-suggestion-loading" class="milestone-ai-state hidden">
+          <div class="milestone-ai-pulse" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <p class="card-label">Planning</p>
+            <h3>Building the next real milestone...</h3>
+            <p class="muted">Using your goal, baseline, completed milestone, current state, and profile context.</p>
+          </div>
+        </article>
+
+        <article id="milestone-suggestion-card" class="milestone-suggestion-card hidden">
+          <p class="card-label">Suggested Next Milestone</p>
+          <h3 id="milestone-suggestion-title">Next milestone</h3>
+          <p id="milestone-suggestion-why" class="muted">Why it matters will appear here.</p>
+        </article>
+
+        <div id="milestone-next-choice" class="goal-item-actions hidden">
+          <button id="accept-milestone-btn" class="btn btn-primary" type="button">Accept Milestone</button>
+          <button id="edit-milestone-btn" class="btn btn-secondary" type="button">Edit Milestone</button>
+          <button id="move-final-goal-btn" class="btn btn-ghost" type="button">Move to Final Goal</button>
         </div>
 
         <form id="milestone-next-form" class="life-update-form hidden">
           <div class="field-group">
             <label for="next-milestone-title">Next milestone</label>
-            <textarea id="next-milestone-title" name="title" rows="3" maxlength="220" placeholder="Name the next real checkpoint"></textarea>
+            <textarea id="next-milestone-title" name="title" rows="3" maxlength="220" placeholder="Name the next real checkpoint" required></textarea>
           </div>
           <div class="field-group">
             <label for="next-milestone-why">Why it matters <span class="optional">Optional</span></label>
             <textarea id="next-milestone-why" name="why" rows="3" maxlength="220" placeholder="Add context if you want it on the dashboard"></textarea>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" type="submit">Save Milestone</button>
+            <button class="btn btn-primary" type="submit">Save Edited Milestone</button>
+            <button id="cancel-edit-milestone-btn" class="btn btn-secondary" type="button">Back to Suggestion</button>
           </div>
         </form>
       </div>
