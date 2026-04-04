@@ -210,7 +210,8 @@
   const flowState = {
     onboardingStep: 0,
     modalStep: 0,
-    timelineSelectionId: ""
+    timelineSelectionId: "",
+    pendingMilestoneAdvance: null
   };
 
   const elements = {
@@ -294,7 +295,11 @@
     goalInputBaseline: document.getElementById("goal-input-baseline"),
     goalInputMilestone: document.getElementById("goal-input-milestone"),
     myProfileForm: document.getElementById("my-profile-form"),
-    myProfileStatus: document.getElementById("my-profile-status")
+    myProfileStatus: document.getElementById("my-profile-status"),
+    addNextMilestoneBtn: document.getElementById("add-next-milestone-btn"),
+    moveFinalGoalBtn: document.getElementById("move-final-goal-btn"),
+    milestoneNextForm: document.getElementById("milestone-next-form"),
+    milestoneNextChoice: document.getElementById("milestone-next-choice")
   };
 
   init();
@@ -1063,6 +1068,12 @@
       saveGoalFromForm();
     });
     elements.myProfileForm.addEventListener("submit", saveUserProfile);
+    elements.addNextMilestoneBtn.addEventListener("click", () => {
+      elements.milestoneNextChoice.classList.add("hidden");
+      elements.milestoneNextForm.classList.remove("hidden");
+    });
+    elements.moveFinalGoalBtn.addEventListener("click", moveToFinalGoalTarget);
+    elements.milestoneNextForm.addEventListener("submit", saveNextMilestoneFromPrompt);
 
     document.querySelectorAll("[data-close-modal]").forEach((button) => {
       button.addEventListener("click", () => closeModal(button.dataset.closeModal));
@@ -1337,7 +1348,6 @@
   function buildDefaultMilestones(profile) {
     const currentLabel = profile.phaseMilestone || getFallbackMilestone(profile);
     const goalLabel = profile.goalTitle || "your goal";
-    const targetLabel = profile.target || "the result you want";
     const timelineLabel = profile.timeline || "your timing";
 
     return [
@@ -1349,14 +1359,6 @@
       },
       {
         id: "milestone-2",
-        label: profile.target ? `Bridge to ${shortLabel(targetLabel, 52)}` : `Build the next layer of ${shortLabel(goalLabel, 42)}`,
-        detail: profile.target
-          ? `Close the gap between ${profile.baseline || "today"} and ${profile.target}.`
-          : `Turn the current traction into a more stable version of ${goalLabel}.`,
-        completedAt: null
-      },
-      {
-        id: "milestone-3",
         label: profile.timeline ? `Land it by ${shortLabel(timelineLabel, 34)}` : `Complete ${shortLabel(goalLabel, 42)}`,
         detail: profile.timeline
           ? `Carry the work across the finish line so the goal is real by ${profile.timeline}.`
@@ -1506,6 +1508,8 @@
     profile.phaseMilestone = nextMilestone.label;
     if (isFinalMilestone) {
       profile.goalCompletedAt = getActiveDateTimestamp();
+    } else {
+      profile.goalCompletedAt = "";
     }
 
     syncPrimaryGoalFromProfile();
@@ -1514,14 +1518,71 @@
     renderTimeline();
     pulseElement(elements.timelineCompleteBtn.closest(".timeline-detail"), "timeline-complete-pop");
 
-    const message = isFinalMilestone
-      ? TIMELINE_GOAL_COMPLETE_MESSAGE
-      : TIMELINE_ADVANCE_MESSAGES[Math.floor(Math.random() * TIMELINE_ADVANCE_MESSAGES.length)];
-    showTimelineFeedback(message.title, message.body);
-
     if (isFinalMilestone) {
+      showTimelineFeedback(TIMELINE_GOAL_COMPLETE_MESSAGE.title, TIMELINE_GOAL_COMPLETE_MESSAGE.body);
       pulseElement(elements.goalCard, "goal-card-complete");
+      return;
     }
+
+    showTimelineFeedback("Milestone complete.", "What's next?");
+    openMilestoneAdvancePrompt();
+  }
+
+  function openMilestoneAdvancePrompt() {
+    flowState.pendingMilestoneAdvance = {
+      profileId: appState.primaryGoalId || "primary",
+      finalMilestoneId: getMilestones(appState.profile)[getMilestones(appState.profile).length - 1]?.id || ""
+    };
+    elements.milestoneNextChoice.classList.remove("hidden");
+    elements.milestoneNextForm.classList.add("hidden");
+    elements.milestoneNextForm.reset();
+    openModal("milestone-next-modal");
+  }
+
+  function moveToFinalGoalTarget() {
+    flowState.pendingMilestoneAdvance = null;
+    closeModal("milestone-next-modal");
+    renderDashboard();
+    renderTimeline();
+  }
+
+  function saveNextMilestoneFromPrompt(event) {
+    event.preventDefault();
+    const formData = new FormData(elements.milestoneNextForm);
+    const title = (formData.get("title") || "").toString().trim();
+    const why = (formData.get("why") || "").toString().trim();
+    if (!title) {
+      return;
+    }
+
+    const profile = appState.profile;
+    const milestones = getMilestones(profile).map((milestone) => ({ ...milestone }));
+    const finalIndex = milestones.length - 1;
+    const finalMilestone = milestones[finalIndex];
+    const nextMilestone = {
+      id: createId("milestone"),
+      label: title,
+      detail: why,
+      completedAt: null
+    };
+
+    milestones.splice(Math.max(finalIndex, 0), 0, nextMilestone);
+    profile.milestones = milestones;
+    profile.milestoneSelectionId = nextMilestone.id;
+    profile.phaseMilestone = nextMilestone.label;
+    if (why) {
+      profile.phaseWhy = why;
+    }
+    if (finalMilestone?.id === profile.milestoneSelectionId) {
+      profile.milestoneSelectionId = nextMilestone.id;
+    }
+
+    syncPrimaryGoalFromProfile();
+    saveState();
+    closeModal("milestone-next-modal");
+    renderDashboard();
+    renderTimeline();
+    showTimelineFeedback("Path updated.", "The next real milestone is now in focus.");
   }
 
   function showTimelineFeedback(title, body) {

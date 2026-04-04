@@ -649,6 +649,40 @@
     </div>
   </div>
 
+  <div id="milestone-next-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="milestone-next-modal"></div>
+    <div class="modal-panel panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Milestone Complete</p>
+          <h2>What&apos;s next?</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="milestone-next-modal" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="life-update-form">
+        <div id="milestone-next-choice" class="goal-item-actions">
+          <button id="add-next-milestone-btn" class="btn btn-primary" type="button">Add another milestone</button>
+          <button id="move-final-goal-btn" class="btn btn-secondary" type="button">Move to final goal</button>
+        </div>
+
+        <form id="milestone-next-form" class="life-update-form hidden">
+          <div class="field-group">
+            <label for="next-milestone-title">Next milestone</label>
+            <textarea id="next-milestone-title" name="title" rows="3" maxlength="220" placeholder="Name the next real checkpoint"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="next-milestone-why">Why it matters <span class="optional">Optional</span></label>
+            <textarea id="next-milestone-why" name="why" rows="3" maxlength="220" placeholder="Add context if you want it on the dashboard"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">Save Milestone</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script src="script.js"></script>
 </body>
 </html>
