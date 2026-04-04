@@ -1,4 +1,4 @@
-// Life Execution V1
+// Life Execution V4.6
 // Local-first personal operating system built with vanilla JavaScript.
 
 (function () {
@@ -134,6 +134,16 @@
     body: "You built this."
   };
 
+  const GOAL_COMPLETION_LINES = [
+    "You did what most people won't.",
+    "You followed through.",
+    "This is earned.",
+    "You built this.",
+    "You stayed with it long enough to become it."
+  ];
+
+  const GOAL_COMPLETION_SECONDARY_LINE = "Take a second. This matters.";
+
   const CLARITY_STEPS = [
     {
       key: "goalTitle",
@@ -211,7 +221,9 @@
     onboardingStep: 0,
     modalStep: 0,
     timelineSelectionId: "",
-    pendingMilestoneAdvance: null
+    pendingMilestoneAdvance: null,
+    selectedCompletedGoalId: "",
+    goalCelebration: null
   };
 
   const elements = {
@@ -242,6 +254,7 @@
     missionFeedback: document.getElementById("mission-feedback"),
     roadmapList: document.getElementById("roadmap-list"),
     goalsList: document.getElementById("goals-list"),
+    completedGoalsBtn: document.getElementById("completed-goals-btn"),
     addGoalBtn: document.getElementById("add-goal-btn"),
     reflectionText: document.getElementById("reflection-text"),
     saveReflectionBtn: document.getElementById("save-reflection-btn"),
@@ -299,7 +312,26 @@
     addNextMilestoneBtn: document.getElementById("add-next-milestone-btn"),
     moveFinalGoalBtn: document.getElementById("move-final-goal-btn"),
     milestoneNextForm: document.getElementById("milestone-next-form"),
-    milestoneNextChoice: document.getElementById("milestone-next-choice")
+    milestoneNextChoice: document.getElementById("milestone-next-choice"),
+    completedGoalsEmpty: document.getElementById("completed-goals-empty"),
+    completedGoalsList: document.getElementById("completed-goals-list"),
+    completedGoalDetail: document.getElementById("completed-goal-detail"),
+    completedGoalDetailTitle: document.getElementById("completed-goal-detail-title"),
+    completedGoalDetailDate: document.getElementById("completed-goal-detail-date"),
+    completedGoalDetailText: document.getElementById("completed-goal-detail-text"),
+    completedGoalDetailStats: document.getElementById("completed-goal-detail-stats"),
+    completedGoalProgressCount: document.getElementById("completed-goal-progress-count"),
+    completedGoalTimeline: document.getElementById("completed-goal-timeline"),
+    goalCelebrationModal: document.getElementById("goal-celebration-modal"),
+    goalCelebrationScreen: document.querySelector("#goal-celebration-modal .celebration-screen"),
+    goalCelebrationContent: document.querySelector("#goal-celebration-modal .celebration-content"),
+    goalCelebrationTitle: document.getElementById("goal-celebration-title"),
+    goalCelebrationGoalName: document.getElementById("goal-celebration-goal-name"),
+    goalCelebrationLine: document.getElementById("goal-celebration-line"),
+    goalCelebrationSecondary: document.getElementById("goal-celebration-secondary"),
+    goalCelebrationStats: document.getElementById("goal-celebration-stats"),
+    goalCelebrationNextBtn: document.getElementById("goal-celebration-next-btn"),
+    goalCelebrationArchiveBtn: document.getElementById("goal-celebration-archive-btn")
   };
 
   init();
@@ -322,6 +354,7 @@
       ...(appState.profile || {})
     };
     appState.goals = Array.isArray(appState.goals) ? appState.goals : [];
+    appState.completedGoals = Array.isArray(appState.completedGoals) ? appState.completedGoals : [];
     appState.primaryGoalId = appState.primaryGoalId || "";
     appState.userProfile = {
       ...createEmptyUserProfile(),
@@ -342,6 +375,7 @@
       appState.meta.onboardingCompleted || hasMeaningfulProfileData(appState.profile)
     );
     appState.meta.onboardingStep = clampStepIndex(appState.meta.onboardingStep || 0);
+    normalizeCompletedGoalsState();
     ensureGoalsState();
     syncMilestoneTimeline();
     saveState();
@@ -359,6 +393,7 @@
       phaseFocus: "",
       phaseMilestone: "",
       phaseWhy: "",
+      createdAt: "",
       milestones: [],
       milestoneSelectionId: "",
       goalCompletedAt: "",
@@ -412,6 +447,8 @@
     const milestone = (goal.milestone || profile.phaseMilestone || "").trim();
     const timeline = (goal.timeline || profile.timeline || "").trim();
     const category = (goal.category || profile.category || inferGoalCategory({ title, milestone, baseline, profile })).trim();
+    const createdAt = (goal.createdAt || profile.createdAt || "").toString().trim();
+    const completedAt = (goal.completedAt || profile.goalCompletedAt || "").toString().trim();
 
     return {
       id: (goal.id || createId("goal")).trim(),
@@ -421,6 +458,8 @@
       milestone,
       timeline,
       category,
+      createdAt,
+      completedAt,
       isPrimary: Boolean(goal.isPrimary),
       profile: {
         ...profile,
@@ -429,9 +468,118 @@
         baseline,
         phaseMilestone: milestone,
         timeline,
-        category
+        category,
+        createdAt,
+        goalCompletedAt: completedAt
       }
     };
+  }
+
+  function isGoalMarkedComplete(goalLike) {
+    return Boolean(
+      goalLike?.completedAt
+      || goalLike?.goalCompletedAt
+      || goalLike?.profile?.goalCompletedAt
+      || goalLike?.profileSnapshot?.goalCompletedAt
+    );
+  }
+
+  function getGoalArchiveKey(goalLike) {
+    return (goalLike?.id || buildGoalSignature(goalLike || {})).trim();
+  }
+
+  function createCompletedGoalRecord(record = {}) {
+    const goalRecord = createGoalRecord(record);
+    const profileSnapshot = {
+      ...createEmptyProfile(),
+      ...(record.profileSnapshot || record.profile || record),
+      goalTitle: goalRecord.title,
+      why: goalRecord.why,
+      baseline: goalRecord.baseline,
+      phaseMilestone: goalRecord.milestone,
+      timeline: goalRecord.timeline,
+      category: goalRecord.category,
+      createdAt: goalRecord.createdAt,
+      goalCompletedAt: (record.completedAt || goalRecord.completedAt || "").toString().trim()
+    };
+    const milestones = getMilestones(profileSnapshot).map((milestone, index) =>
+      normalizeMilestone(milestone, index)
+    );
+    const completedAt = profileSnapshot.goalCompletedAt;
+    const completedMilestones = milestones.map((milestone) => ({
+      ...milestone,
+      completedAt: milestone.completedAt || completedAt || null
+    }));
+    const providedStats = record.journeyStats || {};
+    const milestonesCompleted = Number.isFinite(providedStats.milestonesCompleted)
+      ? providedStats.milestonesCompleted
+      : completedMilestones.filter((milestone) => milestone.completedAt).length;
+
+    return {
+      ...goalRecord,
+      isPrimary: false,
+      createdAt: goalRecord.createdAt,
+      completedAt,
+      summary: (record.summary || profileSnapshot.why || profileSnapshot.phaseWhy || "").toString().trim(),
+      profileSnapshot: {
+        ...profileSnapshot,
+        milestones: completedMilestones,
+        milestoneSelectionId: completedMilestones[completedMilestones.length - 1]?.id || ""
+      },
+      journeyStats: {
+        totalDays: Number.isFinite(providedStats.totalDays) ? providedStats.totalDays : null,
+        wins: Number.isFinite(providedStats.wins) ? providedStats.wins : null,
+        peakStreak: Number.isFinite(providedStats.peakStreak) ? providedStats.peakStreak : null,
+        milestonesCompleted
+      }
+    };
+  }
+
+  // Migrate any legacy "completed but still active" goals into the archive on load.
+  function normalizeCompletedGoalsState() {
+    const archiveMap = new Map(
+      (Array.isArray(appState.completedGoals) ? appState.completedGoals : [])
+        .map((goal) => createCompletedGoalRecord(goal))
+        .filter((goal) => goal.title || goal.summary || goal.completedAt)
+        .map((goal) => [getGoalArchiveKey(goal), goal])
+    );
+    const activeGoals = [];
+
+    (Array.isArray(appState.goals) ? appState.goals : []).forEach((goal) => {
+      const normalizedGoal = createGoalRecord(goal);
+      if (!(normalizedGoal.title || normalizedGoal.why || normalizedGoal.baseline || normalizedGoal.milestone)) {
+        return;
+      }
+
+      if (isGoalMarkedComplete(normalizedGoal)) {
+        const archivedGoal = createCompletedGoalRecord({
+          ...normalizedGoal,
+          profileSnapshot: normalizedGoal.profile
+        });
+        archiveMap.set(getGoalArchiveKey(archivedGoal), archivedGoal);
+        return;
+      }
+
+      activeGoals.push(normalizedGoal);
+    });
+
+    if (hasMeaningfulProfileData(appState.profile) && isGoalMarkedComplete({ profile: appState.profile })) {
+      const archivedProfileGoal = createCompletedGoalRecord({
+        id: appState.primaryGoalId || createId("goal"),
+        profileSnapshot: appState.profile
+      });
+      archiveMap.set(getGoalArchiveKey(archivedProfileGoal), archivedProfileGoal);
+      appState.profile = createEmptyProfile();
+    }
+
+    appState.goals = activeGoals;
+    appState.completedGoals = Array.from(archiveMap.values()).sort((a, b) => {
+      return new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime();
+    });
+
+    if (!appState.goals.some((goal) => goal.id === appState.primaryGoalId)) {
+      appState.primaryGoalId = "";
+    }
   }
 
   function buildGoalSignature(goalLike) {
@@ -448,9 +596,9 @@
   function ensureGoalsState() {
     const normalizedGoals = (Array.isArray(appState.goals) ? appState.goals : [])
       .map((goal) => createGoalRecord(goal))
-      .filter((goal) => goal.title || goal.why || goal.baseline || goal.milestone);
+      .filter((goal) => (goal.title || goal.why || goal.baseline || goal.milestone) && !isGoalMarkedComplete(goal));
 
-    const profileHasGoal = hasMeaningfulProfileData(appState.profile);
+    const profileHasGoal = hasMeaningfulProfileData(appState.profile) && !isGoalMarkedComplete({ profile: appState.profile });
     const profileGoal = profileHasGoal
       ? createGoalRecord({
         id: appState.primaryGoalId || createId("goal"),
@@ -524,6 +672,8 @@
     primaryProfile.phaseMilestone = primaryGoal.milestone || primaryProfile.phaseMilestone;
     primaryProfile.timeline = primaryGoal.timeline || primaryProfile.timeline;
     primaryProfile.category = primaryGoal.category || primaryProfile.category || inferGoalCategory(primaryGoal);
+    primaryProfile.createdAt = primaryGoal.createdAt || primaryProfile.createdAt;
+    primaryProfile.goalCompletedAt = "";
     appState.primaryGoalId = primaryGoal.id;
     appState.profile = primaryProfile;
   }
@@ -539,6 +689,8 @@
     primaryGoal.baseline = appState.profile.baseline || primaryGoal.baseline;
     primaryGoal.milestone = appState.profile.phaseMilestone || primaryGoal.milestone;
     primaryGoal.timeline = appState.profile.timeline || primaryGoal.timeline;
+    primaryGoal.createdAt = appState.profile.createdAt || primaryGoal.createdAt || "";
+    primaryGoal.completedAt = appState.profile.goalCompletedAt || "";
     primaryGoal.category = inferGoalCategory({
       title: primaryGoal.title,
       milestone: primaryGoal.milestone,
@@ -554,7 +706,9 @@
       baseline: primaryGoal.baseline,
       phaseMilestone: primaryGoal.milestone,
       timeline: primaryGoal.timeline,
-      category: primaryGoal.category
+      category: primaryGoal.category,
+      createdAt: primaryGoal.createdAt,
+      goalCompletedAt: primaryGoal.completedAt
     };
 
     appState.goals.forEach((goal) => {
@@ -602,7 +756,7 @@
 
   // Keep the current dashboard goal visible in "Your Goals" without changing the main goal logic.
   function ensureMainGoalInGoalsList() {
-    if (!hasMeaningfulProfileData(appState.profile)) {
+    if (!hasMeaningfulProfileData(appState.profile) || isGoalMarkedComplete({ profile: appState.profile })) {
       return;
     }
 
@@ -662,6 +816,7 @@
     const goalRecord = createGoalRecord({
       ...existingGoal,
       ...goalData,
+      createdAt: existingGoal ? (existingGoal.createdAt || "") : getActiveDateTimestamp(),
       isPrimary: isPrimaryGoal,
       category: inferGoalCategory(goalData),
       profile: {
@@ -672,7 +827,8 @@
         baseline: goalData.baseline,
         phaseMilestone: goalData.milestone,
         timeline: existingGoal?.timeline || "",
-        category: inferGoalCategory(goalData)
+        category: inferGoalCategory(goalData),
+        createdAt: existingGoal ? (existingGoal.createdAt || "") : getActiveDateTimestamp()
       }
     });
 
@@ -1003,6 +1159,10 @@
     return Boolean(profile.goalTitle || profile.target || profile.baseline || profile.gap || profile.phaseName || profile.why);
   }
 
+  function hasActiveGoalProfile(profile) {
+    return hasMeaningfulProfileData(profile) && !isGoalMarkedComplete({ profile });
+  }
+
   function hasCompletedProfile() {
     return Boolean(appState.meta.onboardingCompleted || hasMeaningfulProfileData(appState.profile));
   }
@@ -1044,6 +1204,7 @@
       renderTimeline();
       openModal("timeline-modal");
     });
+    elements.completedGoalsBtn.addEventListener("click", () => openModal("completed-goals-modal"));
     elements.addGoalBtn.addEventListener("click", () => openGoalManager());
     elements.useRealDateBtn.addEventListener("click", clearSimulatedDate);
     elements.prevDayBtn.addEventListener("click", () => {
@@ -1074,6 +1235,11 @@
     });
     elements.moveFinalGoalBtn.addEventListener("click", moveToFinalGoalTarget);
     elements.milestoneNextForm.addEventListener("submit", saveNextMilestoneFromPrompt);
+    elements.goalCelebrationNextBtn.addEventListener("click", openNextGoalBuilder);
+    elements.goalCelebrationArchiveBtn.addEventListener("click", () => {
+      closeModal("goal-celebration-modal");
+      openModal("completed-goals-modal");
+    });
 
     document.querySelectorAll("[data-close-modal]").forEach((button) => {
       button.addEventListener("click", () => closeModal(button.dataset.closeModal));
@@ -1214,6 +1380,9 @@
 
   function persistClarityAnswer(step, value) {
     const cleaned = (value || "").toString().trim();
+    if (!appState.profile.createdAt && cleaned && !hasMeaningfulProfileData(appState.profile)) {
+      appState.profile.createdAt = getActiveDateTimestamp();
+    }
     if (step.key === "gap") {
       appState.profile.gap = cleaned;
       appState.profile.phaseFocus = cleaned;
@@ -1392,6 +1561,118 @@
     return { total, completed, percent };
   }
 
+  function getTimelineProgressForMilestones(milestones) {
+    const total = milestones.length;
+    const completed = milestones.filter((milestone) => milestone.completedAt).length;
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, percent };
+  }
+
+  function getDateKeyFromValue(value) {
+    if (!value) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return value;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  function getCalendarDaySpan(startValue, endValue) {
+    const startKey = getDateKeyFromValue(startValue);
+    const endKey = getDateKeyFromValue(endValue);
+    if (!startKey || !endKey) {
+      return null;
+    }
+    const start = new Date(`${startKey}T12:00:00`);
+    const end = new Date(`${endKey}T12:00:00`);
+    const diff = Math.round((end.getTime() - start.getTime()) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  }
+
+  function calculateGoalJourneyStats(profileSnapshot, createdAt, completedAt) {
+    const milestones = getMilestones(profileSnapshot);
+    const milestoneCount = milestones.filter((milestone) => milestone.completedAt).length;
+    const totalDays = getCalendarDaySpan(createdAt, completedAt);
+    const startKey = getDateKeyFromValue(createdAt);
+    const endKey = getDateKeyFromValue(completedAt);
+
+    if (!startKey || !endKey) {
+      return {
+        totalDays: null,
+        wins: null,
+        peakStreak: null,
+        milestonesCompleted: milestoneCount
+      };
+    }
+
+    const winKeys = Object.keys(appState.wins)
+      .filter((dateKey) => dateKey >= startKey && dateKey <= endKey && appState.wins[dateKey]?.won)
+      .sort();
+
+    let peakStreak = 0;
+    let currentStreak = 0;
+    let previousWinKey = "";
+
+    winKeys.forEach((dateKey) => {
+      if (previousWinKey && offsetDateKey(previousWinKey, 1) === dateKey) {
+        currentStreak += 1;
+      } else {
+        currentStreak = 1;
+      }
+      peakStreak = Math.max(peakStreak, currentStreak);
+      previousWinKey = dateKey;
+    });
+
+    return {
+      totalDays,
+      wins: winKeys.length,
+      peakStreak: winKeys.length ? peakStreak : 0,
+      milestonesCompleted: milestoneCount
+    };
+  }
+
+  function getGoalCelebrationStats(goal) {
+    if (!goal?.journeyStats) {
+      return [];
+    }
+
+    const stats = [];
+    if (Number.isFinite(goal.journeyStats.totalDays)) {
+      stats.push({ label: "Days", value: String(goal.journeyStats.totalDays) });
+    }
+    if (Number.isFinite(goal.journeyStats.wins)) {
+      stats.push({ label: "Wins", value: String(goal.journeyStats.wins) });
+    }
+    if (Number.isFinite(goal.journeyStats.peakStreak)) {
+      stats.push({ label: "Peak streak", value: String(goal.journeyStats.peakStreak) });
+    }
+    if (Number.isFinite(goal.journeyStats.milestonesCompleted)) {
+      stats.push({ label: "Milestones", value: String(goal.journeyStats.milestonesCompleted) });
+    }
+    return stats;
+  }
+
+  function renderStatsMarkup(stats) {
+    const safeStats = Array.isArray(stats) ? stats : [];
+    if (!safeStats.length) {
+      return "<div class=\"celebration-stat\"><span class=\"mini-label\">Milestones</span><strong>Finished</strong></div>";
+    }
+
+    return safeStats
+      .map((stat) => `
+        <div class="celebration-stat">
+          <span class="mini-label">${escapeHtml(stat.label)}</span>
+          <strong>${escapeHtml(stat.value)}</strong>
+        </div>
+      `)
+      .join("");
+  }
+
   function getTimelineNodeState(milestone, currentMilestone) {
     if (milestone.completedAt) return "complete";
     if (currentMilestone && milestone.id === currentMilestone.id) return "current";
@@ -1418,6 +1699,16 @@
 
   // Render the horizontal timeline and keep the detail panel in sync.
   function renderTimeline() {
+    if (!hasActiveGoalProfile(appState.profile) && !getPrimaryGoal()) {
+      elements.timelineProgressPercent.textContent = "0%";
+      elements.timelineProgressCount.textContent = "0 of 0 complete";
+      elements.timelineTrack.innerHTML = "";
+      elements.timelineTrack.dataset.progress = "0";
+      elements.timelineTrack.style.setProperty("--timeline-progress", 0);
+      renderTimelineDetail();
+      return;
+    }
+
     syncMilestoneTimeline();
     const profile = appState.profile;
     const milestones = getMilestones(profile);
@@ -1461,6 +1752,15 @@
 
   function renderTimelineDetail() {
     const profile = appState.profile;
+    const hasGoal = hasActiveGoalProfile(profile) || Boolean(getPrimaryGoal());
+    if (!hasGoal) {
+      elements.timelineDetailTitle.textContent = "No active goal";
+      elements.timelineDetailText.textContent = "Set the next goal when you're ready. Completed goals stay in the archive.";
+      elements.timelineDetailStatus.classList.add("hidden");
+      elements.timelineCompleteBtn.classList.add("hidden");
+      return;
+    }
+
     const selectedMilestone = getSelectedMilestone(profile);
     const currentMilestone = getCurrentMilestone(profile);
     const isCurrent = Boolean(
@@ -1477,12 +1777,171 @@
     elements.timelineCompleteBtn.classList.toggle("hidden", !isCurrent);
   }
 
+  function renderCompletedGoalTimeline(goal) {
+    const profileSnapshot = goal?.profileSnapshot || createEmptyProfile();
+    const milestones = getMilestones(profileSnapshot).map((milestone, index) => normalizeMilestone(milestone, index));
+    const progress = getTimelineProgressForMilestones(milestones);
+
+    elements.completedGoalProgressCount.textContent = `${progress.completed} of ${progress.total} complete`;
+    elements.completedGoalTimeline.innerHTML = "";
+    elements.completedGoalTimeline.style.setProperty("--timeline-progress", progress.percent / 100 || 0);
+    elements.completedGoalTimeline.dataset.progress = String(progress.percent / 100 || 0);
+
+    milestones.forEach((milestone, index) => {
+      const node = document.createElement("div");
+      node.className = "timeline-node is-complete";
+      node.innerHTML = `
+        <button class="timeline-node-button" type="button" disabled aria-label="${escapeHtml(milestone.label)}">
+          <span class="timeline-node-check">&#10003;</span>
+        </button>
+        <span class="timeline-node-label">${escapeHtml(shortLabel(milestone.label, 26))}</span>
+      `;
+      elements.completedGoalTimeline.appendChild(node);
+    });
+  }
+
   function selectTimelineMilestone(milestoneId) {
     appState.profile.milestoneSelectionId = milestoneId;
     flowState.timelineSelectionId = milestoneId;
     syncPrimaryGoalFromProfile();
     saveState();
     renderTimeline();
+  }
+
+  function buildArchivedPrimaryGoal(completedAt, finalMilestones) {
+    const activeGoal = getPrimaryGoal();
+    if (!activeGoal) {
+      return null;
+    }
+
+    const completedMilestones = (finalMilestones || getMilestones(appState.profile)).map((milestone, index) => {
+      const normalizedMilestone = normalizeMilestone(milestone, index);
+      return {
+        ...normalizedMilestone,
+        completedAt: normalizedMilestone.completedAt || completedAt
+      };
+    });
+    const createdAt = activeGoal.createdAt || appState.profile.createdAt || "";
+    const profileSnapshot = {
+      ...createEmptyProfile(),
+      ...appState.profile,
+      goalTitle: activeGoal.title || appState.profile.goalTitle,
+      why: activeGoal.why || appState.profile.why,
+      baseline: activeGoal.baseline || appState.profile.baseline,
+      phaseMilestone: completedMilestones[completedMilestones.length - 1]?.label || activeGoal.milestone || appState.profile.phaseMilestone,
+      timeline: activeGoal.timeline || appState.profile.timeline,
+      category: activeGoal.category || appState.profile.category,
+      createdAt,
+      goalCompletedAt: completedAt,
+      milestoneSelectionId: completedMilestones[completedMilestones.length - 1]?.id || "",
+      milestones: completedMilestones
+    };
+    const journeyStats = calculateGoalJourneyStats(profileSnapshot, createdAt, completedAt);
+
+    return createCompletedGoalRecord({
+      ...activeGoal,
+      createdAt,
+      completedAt,
+      summary: profileSnapshot.why || profileSnapshot.phaseWhy || "",
+      journeyStats,
+      profileSnapshot
+    });
+  }
+
+  // Final goal completion is archived separately so completed goals leave all active flows cleanly.
+  function archiveCompletedPrimaryGoal(completedGoal) {
+    if (!completedGoal) {
+      return;
+    }
+
+    const archiveKey = getGoalArchiveKey(completedGoal);
+    const archiveMap = new Map(appState.completedGoals.map((goal) => [getGoalArchiveKey(goal), goal]));
+    archiveMap.set(archiveKey, completedGoal);
+    appState.completedGoals = Array.from(archiveMap.values()).sort((a, b) => {
+      return new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime();
+    });
+    appState.goals = appState.goals.filter((goal) => goal.id !== completedGoal.id);
+    flowState.selectedCompletedGoalId = completedGoal.id;
+    flowState.timelineSelectionId = "";
+
+    if (appState.goals.length) {
+      appState.primaryGoalId = appState.goals[0].id;
+      appState.goals = appState.goals.map((goal) => ({
+        ...goal,
+        isPrimary: goal.id === appState.primaryGoalId
+      }));
+      syncProfileFromPrimaryGoal();
+      syncDerivedProfileFields();
+    } else {
+      appState.primaryGoalId = "";
+      appState.profile = createEmptyProfile();
+      appState.roadmap = generateRoadmap(appState.profile);
+    }
+  }
+
+  function openGoalCelebration(goal) {
+    const stats = getGoalCelebrationStats(goal);
+    flowState.goalCelebration = {
+      goalId: goal.id,
+      goalTitle: goal.title,
+      line: GOAL_COMPLETION_LINES[Math.floor(Math.random() * GOAL_COMPLETION_LINES.length)],
+      secondaryLine: GOAL_COMPLETION_SECONDARY_LINE,
+      stats
+    };
+    renderGoalCelebration();
+    openModal("goal-celebration-modal");
+  }
+
+  function renderGoalCelebration() {
+    const celebration = flowState.goalCelebration;
+    if (!celebration) {
+      return;
+    }
+
+    elements.goalCelebrationTitle.textContent = "GOAL COMPLETE.";
+    elements.goalCelebrationGoalName.textContent = celebration.goalTitle || "";
+    elements.goalCelebrationGoalName.classList.toggle("hidden", !celebration.goalTitle);
+    elements.goalCelebrationLine.textContent = celebration.line;
+    elements.goalCelebrationSecondary.textContent = celebration.secondaryLine;
+    elements.goalCelebrationStats.innerHTML = renderStatsMarkup(celebration.stats);
+    prepareCelebrationSequence();
+  }
+
+  function prepareCelebrationSequence() {
+    const stats = Array.from(elements.goalCelebrationStats.querySelectorAll(".celebration-stat"));
+    stats.forEach((stat, index) => {
+      stat.style.setProperty("--celebration-delay", `${0.44 + index * 0.1}s`);
+    });
+
+    [elements.goalCelebrationNextBtn, elements.goalCelebrationArchiveBtn].forEach((button, index) => {
+      button.style.setProperty("--celebration-delay", `${0.82 + index * 0.08}s`);
+    });
+  }
+
+  function restartCelebrationSequence() {
+    const modal = elements.goalCelebrationModal;
+    if (!modal) {
+      return;
+    }
+
+    modal.classList.remove("is-entering");
+    void modal.offsetWidth;
+    modal.classList.add("is-entering");
+  }
+
+  function completePrimaryGoal(finalMilestones) {
+    const completedAt = getActiveDateTimestamp();
+    const archivedGoal = buildArchivedPrimaryGoal(completedAt, finalMilestones);
+    if (!archivedGoal) {
+      return;
+    }
+
+    archiveCompletedPrimaryGoal(archivedGoal);
+    ensureMissionForToday(true);
+    saveState();
+    renderDashboard();
+    showTimelineFeedback(TIMELINE_GOAL_COMPLETE_MESSAGE.title, TIMELINE_GOAL_COMPLETE_MESSAGE.body);
+    openGoalCelebration(archivedGoal);
   }
 
   // Complete the active milestone, advance focus, and preserve existing profile compatibility.
@@ -1503,26 +1962,21 @@
     const isFinalMilestone = currentIndex === milestones.length - 1;
     const nextMilestone = milestones[currentIndex + 1] || milestones[currentIndex];
 
+    if (isFinalMilestone) {
+      completePrimaryGoal(milestones);
+      return;
+    }
+
     profile.milestones = milestones;
     profile.milestoneSelectionId = nextMilestone.id;
     profile.phaseMilestone = nextMilestone.label;
-    if (isFinalMilestone) {
-      profile.goalCompletedAt = getActiveDateTimestamp();
-    } else {
-      profile.goalCompletedAt = "";
-    }
+    profile.goalCompletedAt = "";
 
     syncPrimaryGoalFromProfile();
     saveState();
     renderDashboard();
     renderTimeline();
     pulseElement(elements.timelineCompleteBtn.closest(".timeline-detail"), "timeline-complete-pop");
-
-    if (isFinalMilestone) {
-      showTimelineFeedback(TIMELINE_GOAL_COMPLETE_MESSAGE.title, TIMELINE_GOAL_COMPLETE_MESSAGE.body);
-      pulseElement(elements.goalCard, "goal-card-complete");
-      return;
-    }
 
     showTimelineFeedback("Milestone complete.", "What's next?");
     openMilestoneAdvancePrompt();
@@ -2201,9 +2655,12 @@
   function renderDashboard() {
     const { profile, daily } = getTodayContext();
     const mission = appState.missions[activeDateKey] || { title: "", subtitle: "", items: [] };
-    syncMilestoneTimeline();
-    const currentMilestone = getCurrentMilestone(profile);
-    const timelineProgress = getTimelineProgress(profile);
+    const hasActiveGoal = hasActiveGoalProfile(profile) || Boolean(getPrimaryGoal());
+    if (hasActiveGoal) {
+      syncMilestoneTimeline();
+    }
+    const currentMilestone = hasActiveGoal ? getCurrentMilestone(profile) : null;
+    const timelineProgress = hasActiveGoal ? getTimelineProgress(profile) : { percent: 0 };
 
     elements.todayDate.textContent = formatDisplayDate(new Date(`${activeDateKey}T12:00:00`));
     elements.streakCount.textContent = String(appState.streak || 0);
@@ -2212,35 +2669,45 @@
     elements.todaySummary.textContent = daily.coachResponse;
     elements.momentumStatus.textContent = getMomentumStatus(getTodayContext());
 
-    elements.goalCardTitle.textContent = profile.goalTitle || "Your main mission";
-    elements.goalWhyText.textContent = profile.why || "Clarity gets stronger when you keep returning to what matters.";
-    elements.goalBaselineText.textContent = profile.baseline || "Not clear yet";
-    elements.goalTargetText.textContent = profile.target || "Still taking shape";
+    elements.goalCardTitle.textContent = hasActiveGoal ? (profile.goalTitle || "Your main mission") : "No active goal";
+    elements.goalWhyText.textContent = hasActiveGoal
+      ? (profile.why || "Clarity gets stronger when you keep returning to what matters.")
+      : "Your last completed goal is safely archived. Set the next one when you're ready.";
+    elements.goalBaselineText.textContent = hasActiveGoal ? (profile.baseline || "Not clear yet") : "Archive saved";
+    elements.goalTargetText.textContent = hasActiveGoal ? (profile.target || "Still taking shape") : "Choose the next meaningful target";
 
-    if (profile.timeline) {
+    if (hasActiveGoal && profile.timeline) {
       elements.goalTimelineChip.textContent = profile.timeline;
       elements.goalTimelineChip.classList.remove("hidden");
     } else {
       elements.goalTimelineChip.classList.add("hidden");
     }
 
-    const progressPercent = calculateProgressSignal(profile);
-    elements.progressLabel.textContent = profile.goalCompletedAt ? "Goal complete" : progressPercent.label;
+    const progressPercent = hasActiveGoal ? calculateProgressSignal(profile) : { value: 0, label: "Awaiting clarity" };
+    elements.progressLabel.textContent = hasActiveGoal ? progressPercent.label : "Awaiting clarity";
     elements.progressFill.style.width = `${progressPercent.value}%`;
-    elements.goalCard.classList.toggle("goal-card-complete", Boolean(profile.goalCompletedAt));
+    elements.goalCard.classList.toggle("goal-card-complete", false);
 
     syncDailyPerformanceFromMission();
     syncRoadmap();
     saveState();
     const roadmap = appState.roadmap;
-    const nextMilestone = currentMilestone?.label || profile.phaseMilestone || getFallbackMilestone(profile);
-    elements.phaseCardTitle.textContent = profile.phaseName || roadmap[0].title;
-    elements.phaseFocusText.textContent = profile.phaseFocus || profile.gap || "Choose the next useful thing and do it well";
+    const nextMilestone = hasActiveGoal
+      ? (currentMilestone?.label || profile.phaseMilestone || getFallbackMilestone(profile))
+      : "No active milestone";
+    elements.phaseCardTitle.textContent = hasActiveGoal ? (profile.phaseName || roadmap[0].title) : "Set the next goal";
+    elements.phaseFocusText.textContent = hasActiveGoal
+      ? (profile.phaseFocus || profile.gap || "Choose the next useful thing and do it well")
+      : "Completed goals stay archived. The next one starts when you decide it does.";
     elements.phaseMilestoneText.textContent = nextMilestone;
-    elements.phaseWhyText.textContent = getMilestoneDetail(currentMilestone, profile);
+    elements.phaseWhyText.textContent = hasActiveGoal
+      ? getMilestoneDetail(currentMilestone, profile)
+      : "Use Completed Goals to revisit what you finished.";
     elements.viewTimelineBtn.textContent = `View Timeline (${timelineProgress.percent}%)`;
+    elements.viewTimelineBtn.disabled = !hasActiveGoal;
 
     renderGoalsList();
+    updateCompletedGoalsButton();
     renderRoadmap(profile);
     elements.missionTitle.textContent = mission.title;
     elements.missionSubtitle.textContent = mission.subtitle;
@@ -2257,7 +2724,107 @@
     if (!document.getElementById("timeline-modal")?.classList.contains("hidden")) {
       renderTimeline();
     }
+    if (!document.getElementById("completed-goals-modal")?.classList.contains("hidden")) {
+      renderCompletedGoalsArchive();
+    }
     showScreen("dashboard");
+  }
+
+  function updateCompletedGoalsButton() {
+    const count = appState.completedGoals.length;
+    elements.completedGoalsBtn.textContent = count ? `Completed Goals (${count})` : "Completed Goals";
+  }
+
+  function renderCompletedGoalsArchive() {
+    const completedGoals = [...appState.completedGoals].sort((a, b) => {
+      return new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime();
+    });
+    elements.completedGoalsList.innerHTML = "";
+    elements.completedGoalsEmpty.classList.toggle("hidden", completedGoals.length > 0);
+    elements.completedGoalDetail.classList.toggle("hidden", completedGoals.length === 0);
+
+    if (!completedGoals.length) {
+      elements.completedGoalTimeline.innerHTML = "";
+      elements.completedGoalDetailStats.innerHTML = "";
+      return;
+    }
+
+    if (!completedGoals.some((goal) => goal.id === flowState.selectedCompletedGoalId)) {
+      flowState.selectedCompletedGoalId = completedGoals[0].id;
+    }
+
+    completedGoals.forEach((goal) => {
+      const stats = getGoalCelebrationStats(goal);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = `completed-goal-card${goal.id === flowState.selectedCompletedGoalId ? " is-selected" : ""}`;
+      card.innerHTML = `
+        <div class="completed-goal-card-head">
+          <div>
+            <p class="card-label">Completed Goal</p>
+            <h3>${escapeHtml(goal.title || "Completed goal")}</h3>
+          </div>
+          <span class="chip">${escapeHtml(formatGoalCategory(goal.category || inferGoalCategory(goal)))}</span>
+        </div>
+        <p class="completed-goal-summary">${escapeHtml(goal.summary || "Finished and archived.")}</p>
+        <div class="completed-goal-card-meta">
+          <span class="completed-goal-progress">100%</span>
+          <span class="muted">${escapeHtml(formatArchiveCompletionMeta(goal, stats))}</span>
+        </div>
+      `;
+      card.addEventListener("click", () => {
+        flowState.selectedCompletedGoalId = goal.id;
+        renderCompletedGoalsArchive();
+      });
+      elements.completedGoalsList.appendChild(card);
+    });
+
+    renderCompletedGoalDetail(completedGoals.find((goal) => goal.id === flowState.selectedCompletedGoalId) || completedGoals[0]);
+  }
+
+  function formatArchiveCompletionMeta(goal, stats) {
+    const parts = [];
+    if (goal.completedAt) {
+      parts.push(formatDisplayDate(new Date(goal.completedAt)));
+    }
+    const milestoneStat = stats.find((stat) => stat.label === "Milestones");
+    if (milestoneStat) {
+      parts.push(`${milestoneStat.value} milestones`);
+    }
+    return parts.join(" | ");
+  }
+
+  function renderCompletedGoalDetail(goal) {
+    if (!goal) {
+      elements.completedGoalDetail.classList.add("hidden");
+      return;
+    }
+
+    const stats = getGoalCelebrationStats(goal);
+    elements.completedGoalDetail.classList.remove("hidden");
+    elements.completedGoalDetailTitle.textContent = goal.title || "Completed goal";
+    elements.completedGoalDetailText.textContent = goal.summary || goal.profileSnapshot?.phaseWhy || "Finished and archived.";
+    if (goal.completedAt) {
+      elements.completedGoalDetailDate.textContent = formatDisplayDate(new Date(goal.completedAt));
+      elements.completedGoalDetailDate.classList.remove("hidden");
+    } else {
+      elements.completedGoalDetailDate.classList.add("hidden");
+    }
+    elements.completedGoalDetailStats.innerHTML = renderStatsMarkup(stats);
+    renderCompletedGoalTimeline(goal);
+  }
+
+  function openNextGoalBuilder() {
+    closeModal("goal-celebration-modal");
+    if (appState.goals.length) {
+      openGoalManager();
+      return;
+    }
+
+    appState.profile = createEmptyProfile();
+    flowState.modalStep = 0;
+    fillProfileForms();
+    openModal("profile-modal");
   }
 
   function renderRoadmap(profile) {
@@ -2575,14 +3142,26 @@
     if (id === "timeline-modal") {
       renderTimeline();
     }
+    if (id === "completed-goals-modal") {
+      renderCompletedGoalsArchive();
+    }
+    if (id === "goal-celebration-modal") {
+      renderGoalCelebration();
+    }
     modal.classList.remove("hidden");
     modal.setAttribute("aria-hidden", "false");
+    if (id === "goal-celebration-modal") {
+      restartCelebrationSequence();
+    }
   }
 
   function closeModal(id) {
     const modal = document.getElementById(id);
     modal.classList.add("hidden");
     modal.setAttribute("aria-hidden", "true");
+    if (id === "goal-celebration-modal") {
+      modal.classList.remove("is-entering");
+    }
   }
 
   function offsetDateKey(dateKey, offset) {

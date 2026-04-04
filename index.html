@@ -127,7 +127,10 @@
                 <p class="card-label">Your Goals</p>
                 <h2>Primary and supporting goals</h2>
               </div>
-              <button id="add-goal-btn" class="btn btn-ghost" type="button">Add Goal</button>
+              <div class="card-head-actions">
+                <button id="completed-goals-btn" class="btn btn-ghost" type="button">Completed Goals</button>
+                <button id="add-goal-btn" class="btn btn-ghost" type="button">Add Goal</button>
+              </div>
             </div>
             <div id="goals-list" class="goals-list"></div>
           </article>
@@ -679,6 +682,90 @@
             <button class="btn btn-primary" type="submit">Save Milestone</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="completed-goals-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="completed-goals-modal"></div>
+    <div class="modal-panel panel completed-goals-panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Completed Goals</p>
+          <h2>Earned, not imagined.</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="completed-goals-modal" aria-label="Close">&times;</button>
+      </div>
+
+      <div id="completed-goals-empty" class="archive-empty hidden">
+        <strong>No completed goals yet.</strong>
+        <span class="muted">When you finish a goal, it will move here with its final timeline and journey stats.</span>
+      </div>
+
+      <div class="completed-goals-layout">
+        <div id="completed-goals-list" class="completed-goals-list"></div>
+
+        <article id="completed-goal-detail" class="completed-goal-detail panel hidden">
+          <div class="timeline-detail-head">
+            <div>
+              <p class="card-label">Archived Goal</p>
+              <h3 id="completed-goal-detail-title">Completed goal</h3>
+            </div>
+            <span id="completed-goal-detail-date" class="chip hidden"></span>
+          </div>
+
+          <p id="completed-goal-detail-text" class="muted">Select a completed goal to view its final timeline.</p>
+
+          <div id="completed-goal-detail-stats" class="celebration-stats celebration-stats-compact"></div>
+
+          <div class="timeline-summary completed-timeline-summary">
+            <div>
+              <span class="mini-label">Progress</span>
+              <strong>100%</strong>
+            </div>
+            <div>
+              <span class="mini-label">Milestones</span>
+              <strong id="completed-goal-progress-count">0 of 0 complete</strong>
+            </div>
+          </div>
+
+          <div class="timeline-scroll completed-timeline-scroll">
+            <div id="completed-goal-timeline" class="timeline-track completed-timeline-track"></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <div id="goal-celebration-modal" class="modal modal-fullscreen hidden" aria-hidden="true">
+    <div class="modal-backdrop celebration-backdrop"></div>
+    <div class="celebration-screen">
+      <div class="celebration-glow"></div>
+      <div class="celebration-ring celebration-ring-one"></div>
+      <div class="celebration-ring celebration-ring-two"></div>
+      <div class="celebration-particles" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+
+      <div class="celebration-content">
+        <div class="celebration-mark" aria-hidden="true">&#10003;</div>
+        <p class="eyebrow">Goal Achieved</p>
+        <h2 id="goal-celebration-title" class="celebration-title">GOAL COMPLETE.</h2>
+        <p id="goal-celebration-goal-name" class="celebration-goal-name"></p>
+        <p id="goal-celebration-line" class="celebration-line"></p>
+        <p id="goal-celebration-secondary" class="celebration-secondary">Take a second. This matters.</p>
+        <div id="goal-celebration-stats" class="celebration-stats"></div>
+        <div class="celebration-actions">
+          <button id="goal-celebration-next-btn" class="btn btn-primary btn-large" type="button">Set Next Goal</button>
+          <button id="goal-celebration-archive-btn" class="btn btn-secondary btn-large" type="button">View Completed Goals</button>
+        </div>
       </div>
     </div>
   </div>
