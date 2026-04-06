@@ -4,8 +4,10 @@ const path = require("path");
 const { ROOT_DIR, PORT } = require("./server/config");
 const { suggestNextMilestone } = require("./server/milestone-planner");
 const { generateRoadmap } = require("./server/roadmap-planner");
+const { generateDailyMissionPlan } = require("./server/mission-planner");
 const { OpenAIConfigError } = require("./server/openai");
 
+const DEBUG = false;
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -18,6 +20,12 @@ const MIME_TYPES = {
   ".webp": "image/webp",
   ".ico": "image/x-icon"
 };
+
+function debugLog(...args) {
+  if (DEBUG) {
+    console.log(...args);
+  }
+}
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -33,6 +41,11 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/generate-daily-mission") {
+      await handleGenerateDailyMission(request, response);
+      return;
+    }
+
     if (request.method === "GET" || request.method === "HEAD") {
       await serveStaticAsset(url.pathname, response, request.method === "HEAD");
       return;
@@ -45,7 +58,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Life Execution V5 server running at http://localhost:${PORT}`);
+  console.log(`Life Execution V5.3 server running at http://localhost:${PORT}`);
 });
 
 async function handleSuggestNextMilestone(request, response) {
@@ -103,6 +116,75 @@ async function handleGenerateRoadmap(request, response) {
 
     sendJson(response, 502, {
       error: "Unable to generate the roadmap right now.",
+      details: error.message
+    });
+  }
+}
+
+async function handleGenerateDailyMission(request, response) {
+  try {
+    const payload = await readJsonBody(request);
+    const { plan: missionPlan, debug } = await generateDailyMissionPlan(payload);
+
+    debugLog("MISSION ROUTE: raw OpenAI response object");
+    debugLog(debug?.rawResponse);
+    debugLog("MISSION ROUTE: extracted content used");
+    debugLog(debug?.extractedContent);
+    debugLog("MISSION ROUTE: final parsed mission object");
+    debugLog(debug?.parsedMission);
+    debugLog("MISSION ROUTE: final normalized mission object");
+    debugLog(debug?.normalizedPlan);
+    debugLog("MISSION ROUTE SUCCESS - RETURNING TO FRONTEND");
+    debugLog(missionPlan);
+
+    try {
+      sendJson(response, 200, missionPlan);
+    } catch (sendError) {
+      sendError.stage = "res.json";
+      throw sendError;
+    }
+  } catch (error) {
+    console.error("MISSION ROUTE FAILURE", {
+      stage: error.stage || "unknown",
+      message: error.message,
+      stack: error.stack
+    });
+    if (error.rawText !== undefined) {
+      console.error("MISSION ROUTE FAILURE RAW TEXT");
+      console.error(error.rawText);
+    }
+    if (error.extractedContent !== undefined) {
+      console.error("MISSION ROUTE FAILURE EXTRACTED CONTENT");
+      console.error(error.extractedContent);
+    }
+    if (error.parsedMission !== undefined) {
+      console.error("MISSION ROUTE FAILURE PARSED MISSION");
+      console.error(error.parsedMission);
+    }
+    if (error.rawResponse !== undefined) {
+      console.error("MISSION ROUTE FAILURE RAW RESPONSE");
+      console.error(error.rawResponse);
+    }
+
+    if (error instanceof OpenAIConfigError) {
+      sendJson(response, 503, {
+        error: "AI mission planning is unavailable because the server is missing OPENAI_API_KEY."
+      });
+      return;
+    }
+
+    if (error instanceof SyntaxError) {
+      sendJson(response, 400, { error: "Invalid JSON request body." });
+      return;
+    }
+
+    if (error.message === "Primary goal is required.") {
+      sendJson(response, 400, { error: error.message });
+      return;
+    }
+
+    sendJson(response, 502, {
+      error: "Unable to generate today's AI mission right now.",
       details: error.message
     });
   }

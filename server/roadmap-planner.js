@@ -77,7 +77,7 @@ async function generateRoadmap(payload = {}) {
 
 function buildRoadmapInstructions() {
   return [
-    "You are the roadmap planner for Life Execution Version 5.2.",
+    "You are the roadmap planner for Life Execution Version 5.3.",
     "Generate a full milestone roadmap from the user's real baseline to the user's real final goal.",
     "Return only meaningful milestones, usually around 3 to 7 steps.",
     "The roadmap must start from the baseline, move logically forward, and end with the actual final goal.",

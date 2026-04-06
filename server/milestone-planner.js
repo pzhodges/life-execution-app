@@ -49,7 +49,7 @@ async function suggestNextMilestone(payload = {}) {
 
 function buildPlannerInstructions() {
   return [
-    "You are the milestone planner for Life Execution Version 5.",
+    "You are the milestone planner for Life Execution Version 5.3.",
     "When requestType is first_milestone, return the first realistic milestone for the new goal.",
     "When requestType is next_milestone, return one realistic next milestone after the completed milestone.",
     "The milestone must be a single concrete checkpoint, not a full plan.",

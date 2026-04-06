@@ -6,6 +6,11 @@ const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 class OpenAIConfigError extends Error {}
 
 async function createStructuredResponse(options) {
+  const result = await createStructuredResponseWithDebug(options);
+  return result.parsed;
+}
+
+async function createStructuredResponseWithDebug(options) {
   const {
     instructions,
     input,
@@ -35,15 +40,20 @@ async function createStructuredResponse(options) {
     Authorization: `Bearer ${OPENAI_API_KEY}`
   });
 
-  const rawText = extractOutputText(response);
-  if (!rawText) {
-    throw new Error("OpenAI returned an empty milestone suggestion.");
-  }
-
+  let extractedContent;
   try {
-    return JSON.parse(rawText);
+    extractedContent = extractStructuredContent(response);
+    const parsed = parseStructuredContent(extractedContent);
+
+    return {
+      rawResponse: response,
+      extractedContent,
+      parsed
+    };
   } catch (error) {
-    throw new Error("OpenAI returned a non-JSON milestone suggestion.");
+    error.rawResponse = response;
+    error.extractedContent = extractedContent;
+    throw error;
   }
 }
 
@@ -131,7 +141,58 @@ function extractOutputText(response) {
   return parts.join("\n").trim();
 }
 
+function extractStructuredContent(response) {
+  if (response?.output_parsed && typeof response.output_parsed === "object") {
+    return response.output_parsed;
+  }
+
+  const outputItems = Array.isArray(response?.output) ? response.output : [];
+
+  for (const item of outputItems) {
+    if (item?.parsed && typeof item.parsed === "object") {
+      return item.parsed;
+    }
+
+    const content = Array.isArray(item?.content) ? item.content : [];
+    for (const entry of content) {
+      if (entry?.parsed && typeof entry.parsed === "object") {
+        return entry.parsed;
+      }
+      if (entry?.json && typeof entry.json === "object") {
+        return entry.json;
+      }
+    }
+  }
+
+  return extractOutputText(response);
+}
+
+function parseStructuredContent(extractedContent) {
+  if (extractedContent && typeof extractedContent === "object") {
+    return extractedContent;
+  }
+
+  const rawText = typeof extractedContent === "string" ? extractedContent.trim() : "";
+  if (!rawText) {
+    const error = new Error("OpenAI returned an empty structured response.");
+    error.stage = "extraction";
+    error.rawText = rawText;
+    throw error;
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch (parseError) {
+    const error = new Error("OpenAI returned a non-JSON structured response.");
+    error.stage = "parsing";
+    error.rawText = rawText;
+    error.cause = parseError;
+    throw error;
+  }
+}
+
 module.exports = {
   OpenAIConfigError,
-  createStructuredResponse
+  createStructuredResponse,
+  createStructuredResponseWithDebug
 };

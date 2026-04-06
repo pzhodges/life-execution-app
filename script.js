@@ -1,7 +1,8 @@
-// Life Execution V5.0
+// Life Execution V5.3
 // Local-first personal operating system built with vanilla JavaScript.
 
 (function () {
+  const DEBUG = false;
   const STORAGE_KEY = "lifeExecution.v1";
   const SIMULATED_DATE_STORAGE_KEY = "lifeExecution.dev.simulatedDate";
   const STATE_TO_MODE = {
@@ -145,6 +146,13 @@
   const GOAL_COMPLETION_SECONDARY_LINE = "Take a second. This matters.";
   const AI_MILESTONE_ROUTE = "/api/suggest-next-milestone";
   const AI_ROADMAP_ROUTE = "/api/generate-roadmap";
+  const AI_MISSION_ROUTE = "/api/generate-daily-mission";
+
+  function debugLog(...args) {
+    if (DEBUG) {
+      console.log(...args);
+    }
+  }
 
   const CLARITY_STEPS = [
     {
@@ -228,6 +236,10 @@
     missionList: document.getElementById("mission-list"),
     missionTitle: document.getElementById("mission-title"),
     missionSubtitle: document.getElementById("mission-subtitle"),
+    missionMetaRow: document.getElementById("mission-meta-row"),
+    missionPlanStatus: document.getElementById("mission-plan-status"),
+    missionLoadChip: document.getElementById("mission-load-chip"),
+    missionEstimateChip: document.getElementById("mission-estimate-chip"),
     missionFeedback: document.getElementById("mission-feedback"),
     roadmapList: document.getElementById("roadmap-list"),
     goalsList: document.getElementById("goals-list"),
@@ -334,7 +346,7 @@
     renderEmotionOptions();
     renderDevDateControls();
     bindEvents();
-    routeApp();
+    routeApp().catch((error) => console.error("Route app failed", error));
   }
 
   function ensureStateShape() {
@@ -356,6 +368,7 @@
     appState.reflections = appState.reflections || {};
     appState.lifeUpdates = appState.lifeUpdates || [];
     appState.performance = appState.performance || {};
+    appState.milestoneExecutionPlans = appState.milestoneExecutionPlans || {};
     appState.meta = appState.meta || {};
     appState.streak = Number.isFinite(appState.streak) ? appState.streak : 0;
     appState.totalWins = Number.isFinite(appState.totalWins) ? appState.totalWins : 0;
@@ -366,6 +379,7 @@
     appState.meta.onboardingStep = clampStepIndex(appState.meta.onboardingStep || 0);
     normalizeCompletedGoalsState();
     ensureGoalsState();
+    normalizeMissionState();
     syncMilestoneTimeline();
     saveState();
   }
@@ -737,15 +751,171 @@
     appState.primaryGoalId = primaryGoal.id;
   }
 
+  function normalizeMissionState() {
+    appState.missions = Object.entries(appState.missions || {}).reduce((accumulator, [dateKey, mission]) => {
+      accumulator[dateKey] = normalizeMissionRecord(mission, dateKey);
+      return accumulator;
+    }, {});
+    appState.milestoneExecutionPlans = Object.entries(appState.milestoneExecutionPlans || {}).reduce((accumulator, [key, plan]) => {
+      const normalizedPlan = normalizeMilestoneExecutionPlan(plan);
+      if (normalizedPlan) {
+        accumulator[key] = normalizedPlan;
+      }
+      return accumulator;
+    }, {});
+  }
+
+  function normalizeMissionRecord(mission, dateKey = activeDateKey) {
+    const items = Array.isArray(mission?.items)
+      ? mission.items.map((item, index) => normalizeMissionItem(item, `${dateKey}-${index + 1}`))
+      : [];
+    const planStatus = (mission?.planStatus || mission?.aiPlan?.status || mission?.source || "").toString().trim().toLowerCase();
+    const selectedSupportingGoals = Array.isArray(mission?.selectedSupportingGoals)
+      ? mission.selectedSupportingGoals.map((goal) => (goal || "").toString().trim()).filter(Boolean)
+      : Array.isArray(mission?.aiPlan?.selected_supporting_goals)
+        ? mission.aiPlan.selected_supporting_goals.map((goal) => (goal || "").toString().trim()).filter(Boolean)
+        : [];
+
+    return {
+      title: (mission?.title || "").toString().trim(),
+      subtitle: (mission?.subtitle || "").toString().trim(),
+      loadLevel: (mission?.loadLevel || formatMissionLoadLabel(mission?.missionLoad) || "Standard").toString().trim(),
+      missionLoad: (mission?.missionLoad || mission?.loadLevel || "standard").toString().trim().toLowerCase(),
+      dailyFocus: (mission?.dailyFocus || mission?.title || "").toString().trim(),
+      source: planStatus || (mission?.source || "").toString().trim().toLowerCase(),
+      sourceLabel: (mission?.sourceLabel || getMissionSourceLabel(planStatus || mission?.source)).toString().trim(),
+      planStatus,
+      selectedSupportingGoals,
+      milestoneEstimate: (mission?.milestoneEstimate || "").toString().trim(),
+      milestoneEstimateDays: Number.isFinite(Number(mission?.milestoneEstimateDays)) ? Number(mission.milestoneEstimateDays) : null,
+      aiPlan: normalizeSavedAIPlan(mission?.aiPlan),
+      executionPlan: normalizeMilestoneExecutionPlan(mission?.executionPlan || mission?.aiPlan?.execution_plan),
+      generatedAt: mission?.generatedAt || "",
+      items
+    };
+  }
+
+  function normalizeMissionItem(item, fallbackId) {
+    const title = (item?.title || item?.text || "").toString().trim();
+    let subtasks = Array.isArray(item?.subtasks)
+      ? item.subtasks.map((subtask, index) => normalizeMissionSubtask(subtask, `${fallbackId}-subtask-${index + 1}`)).filter((entry) => entry.text)
+      : [];
+    if (item?.completed && subtasks.length) {
+      subtasks = subtasks.map((subtask) => ({
+        ...subtask,
+        completed: true
+      }));
+    }
+    const completed = Boolean(item?.completed || (subtasks.length && subtasks.every((subtask) => subtask.completed)));
+
+    return {
+      id: (item?.id || fallbackId).toString().trim(),
+      title,
+      text: (item?.text || title).toString().trim(),
+      summary: (item?.summary || "").toString().trim(),
+      category: (item?.category || "").toString().trim(),
+      completed,
+      role: (item?.role || "").toString().trim(),
+      goalType: (item?.goalType || item?.goal_type || "").toString().trim(),
+      goalTitle: (item?.goalTitle || item?.goal_title || "").toString().trim(),
+      completesMilestone: Boolean(item?.completesMilestone || item?.completes_milestone),
+      expanded: Boolean(item?.expanded),
+      subtasks
+    };
+  }
+
+  function normalizeMissionSubtask(subtask, fallbackId) {
+    if (typeof subtask === "string") {
+      return {
+        id: fallbackId,
+        text: subtask.trim(),
+        completed: false
+      };
+    }
+
+    return {
+      id: (subtask?.id || fallbackId).toString().trim(),
+      text: (subtask?.text || "").toString().trim(),
+      completed: Boolean(subtask?.completed)
+    };
+  }
+
+  function normalizeSavedAIPlan(aiPlan) {
+    if (!aiPlan || typeof aiPlan !== "object") {
+      return null;
+    }
+
+    const missions = Array.isArray(aiPlan.missions)
+      ? aiPlan.missions.map((mission) => ({
+        goal_type: (mission?.goal_type || "").toString().trim(),
+        goal_title: (mission?.goal_title || "").toString().trim(),
+        title: (mission?.title || "").toString().trim(),
+        summary: (mission?.summary || "").toString().trim(),
+        completes_milestone: Boolean(mission?.completes_milestone),
+        subtasks: Array.isArray(mission?.subtasks)
+          ? mission.subtasks.map((subtask) => (subtask || "").toString().trim()).filter(Boolean)
+          : []
+      })).filter((mission) => mission.goal_type && mission.goal_title && mission.title)
+      : [];
+
+    return {
+      daily_focus: (aiPlan.daily_focus || "").toString().trim(),
+      mission_load: (aiPlan.mission_load || "").toString().trim().toLowerCase(),
+      selected_supporting_goals: Array.isArray(aiPlan.selected_supporting_goals)
+        ? aiPlan.selected_supporting_goals.map((goal) => (goal || "").toString().trim()).filter(Boolean)
+        : [],
+      milestone_estimate: (aiPlan.milestone_estimate || "").toString().trim(),
+      milestone_estimate_days: Number.isFinite(Number(aiPlan.milestone_estimate_days)) ? Number(aiPlan.milestone_estimate_days) : null,
+      status: (aiPlan.status || "").toString().trim().toLowerCase(),
+      execution_plan: normalizeMilestoneExecutionPlan(aiPlan.execution_plan),
+      missions
+    };
+  }
+
+  function getMissionSourceLabel(status) {
+    return (status || "").toString().trim().toLowerCase() === "ai" ? "AI planned" : "Fallback mode";
+  }
+
+  function normalizeMilestoneExecutionPlan(plan) {
+    if (!plan || typeof plan !== "object") {
+      return null;
+    }
+
+    const requiredActionCategories = Array.isArray(plan.required_action_categories)
+      ? plan.required_action_categories.map((item) => (item || "").toString().trim()).filter(Boolean)
+      : [];
+    const completionCriteria = Array.isArray(plan.completion_criteria)
+      ? plan.completion_criteria.map((item) => (item || "").toString().trim()).filter(Boolean)
+      : [];
+    const milestoneTitle = (plan.milestone_title || "").toString().trim();
+
+    if (!milestoneTitle) {
+      return null;
+    }
+
+    return {
+      milestone_title: milestoneTitle,
+      estimated_days: Number.isFinite(Number(plan.estimated_days)) ? Number(plan.estimated_days) : 0,
+      milestone_started_at: (plan.milestone_started_at || "").toString().trim(),
+      elapsed_days: Number.isFinite(Number(plan.elapsed_days)) ? Number(plan.elapsed_days) : 0,
+      progression_focus: (plan.progression_focus || "").toString().trim(),
+      required_action_categories: requiredActionCategories,
+      weekly_rhythm: (plan.weekly_rhythm || "").toString().trim(),
+      recovery_needs: (plan.recovery_needs || "").toString().trim(),
+      completion_criteria: completionCriteria,
+      can_complete_with_single_mission: Boolean(plan.can_complete_with_single_mission)
+    };
+  }
+
   function createId(prefix) {
     return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
   function inferGoalCategory(goal) {
     const text = `${goal?.title || ""} ${goal?.milestone || ""} ${goal?.baseline || ""} ${goal?.profile?.goalTitle || ""} ${goal?.profile?.target || ""}`.toLowerCase();
-    if (/(health|fit|fitness|workout|gym|run|walk|sleep|train|meal|body)/.test(text)) return "health";
+    if (/(health|fit|fitness|workout|gym|run|walk|sleep|train|meal|body|bench|deadlift|squat|cardio|strength|lift)/.test(text)) return "health";
     if (/(family|home|marriage|kids|children|relationship|partner|parent)/.test(text)) return "family";
-    if (/(money|income|budget|debt|revenue|sales|client|business|work|career|job|cash)/.test(text)) return "money";
+    if (/(money|finance|financial|income|budget|debt|revenue|sales|client|business|work|career|job|cash|save|saving|savings|invest|investing)/.test(text)) return "money";
     if (/(learn|study|skill|habit|discipline|growth|practice|read|write)/.test(text)) return "growth";
     return "goal";
   }
@@ -755,7 +925,7 @@
       goal: "Goal",
       health: "Health",
       family: "Family",
-      money: "Money",
+      money: "Finance",
       growth: "Growth"
     };
     return labels[category] || "Goal";
@@ -868,10 +1038,10 @@
       && normalizedRoadmap.some((milestone) => !["milestone-1", "milestone-final"].includes(milestone.id));
     const result = hasConfirmedRoadmapFlag || (!hasOnlyFallbackFinalNode && !hasOnlyFallbackDefaultNodes && hasLegacySavedRoadmap);
 
-    console.log("CB STEP: raw roadmap value", rawRoadmap);
-    console.log("CB STEP: roadmap length", roadmapLength);
-    console.log("CB STEP: first roadmap item", firstRoadmapItem);
-    console.log("CB STEP: result of hasValidRoadmap(goal)", result);
+    debugLog("CB STEP: raw roadmap value", rawRoadmap);
+    debugLog("CB STEP: roadmap length", roadmapLength);
+    debugLog("CB STEP: first roadmap item", firstRoadmapItem);
+    debugLog("CB STEP: result of hasValidRoadmap(goal)", result);
 
     return result;
   }
@@ -879,7 +1049,7 @@
   // Single source of truth for saving a goal record and, when needed,
   // handing it into the AI roadmap approval flow used by Add Goal.
   async function saveGoalThroughRoadmapPipeline(goalInput = {}, options = {}) {
-    console.log("CB STEP: entered shared save pipeline", {
+    debugLog("CB STEP: entered shared save pipeline", {
       goalInput,
       options
     });
@@ -969,7 +1139,7 @@
 
     const hasRoadmap = hasValidRoadmap(existingGoal);
     const shouldGenerateRoadmap = options.forceGenerateRoadmap === true || !hasRoadmap;
-    console.log("CB STEP: roadmap-present check result", {
+    debugLog("CB STEP: roadmap-present check result", {
       hasRoadmap,
       existingIndex,
       shouldGenerateRoadmap,
@@ -979,7 +1149,7 @@
     });
 
     if (shouldGenerateRoadmap) {
-      console.log("CB STEP: calling AI roadmap generator", {
+      debugLog("CB STEP: calling AI roadmap generator", {
         goalId: goalRecord.id,
         originSurface: options.originSurface || "goal-manager"
       });
@@ -1007,7 +1177,7 @@
     });
   }
 
-  function setPrimaryGoal(goalId) {
+  async function setPrimaryGoal(goalId) {
     if (goalId === appState.primaryGoalId) {
       return;
     }
@@ -1019,7 +1189,7 @@
     appState.primaryGoalId = goalId;
     syncProfileFromPrimaryGoal();
     syncDerivedProfileFields();
-    ensureMissionForToday(true);
+    await ensureMissionForToday(true);
     saveState();
     renderDashboard();
   }
@@ -1070,7 +1240,9 @@
 
       const setPrimaryButton = item.querySelector("[data-set-primary]");
       if (setPrimaryButton) {
-        setPrimaryButton.addEventListener("click", () => setPrimaryGoal(goal.id));
+        setPrimaryButton.addEventListener("click", () => {
+          setPrimaryGoal(goal.id).catch((error) => console.error("Unable to switch primary goal", error));
+        });
       }
 
       elements.goalsList.appendChild(item);
@@ -1160,7 +1332,7 @@
     syncActiveDate();
     seedDailyQuote();
     renderDevDateControls();
-    routeApp();
+    routeApp().catch((error) => console.error("Route app failed", error));
   }
 
   function renderDevDateControls() {
@@ -1172,14 +1344,14 @@
     return new Date(`${activeDateKey}T12:00:00`).toISOString();
   }
 
-  function routeApp() {
+  async function routeApp() {
     const hasProfile = hasCompletedProfile();
     const completedOpening = Boolean(appState.daily[activeDateKey]?.state);
 
     showScreen(completedOpening ? (hasProfile ? "dashboard" : "onboarding") : "opening");
 
     if (completedOpening && hasProfile) {
-      ensureMissionForToday();
+      await ensureMissionForToday();
       renderDashboard();
     } else if (!completedOpening) {
       renderOpeningState();
@@ -1319,9 +1491,9 @@
   }
 
   function bindEvents() {
-    elements.startDayBtn.addEventListener("click", () => {
+    elements.startDayBtn.addEventListener("click", async () => {
       if (hasCompletedProfile()) {
-        ensureMissionForToday();
+        await ensureMissionForToday();
         renderDashboard();
         showScreen("dashboard");
         return;
@@ -1361,10 +1533,10 @@
       setSimulatedDate(offsetDateKey(activeDateKey, 1));
     });
 
-    elements.lifeUpdateForm.addEventListener("submit", (event) => {
+    elements.lifeUpdateForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       saveLifeUpdate();
-      ensureMissionForToday(true);
+      await ensureMissionForToday(true);
       renderDashboard();
       elements.lifeUpdateForm.reset();
       renderEmotionOptions();
@@ -1391,8 +1563,8 @@
       button.addEventListener("click", () => closeModal(button.dataset.closeModal));
     });
 
-    elements.regenerateMissionBtn.addEventListener("click", () => {
-      ensureMissionForToday(true);
+    elements.regenerateMissionBtn.addEventListener("click", async () => {
+      await ensureMissionForToday(true);
       renderDashboard();
     });
 
@@ -1570,7 +1742,7 @@
 
       if (appState.profile.goalTitle && appState.profile.why && appState.profile.baseline) {
         try {
-          console.log("CB STEP: finish clicked", {
+          debugLog("CB STEP: finish clicked", {
             surface,
             onboardingStep: appState.meta.onboardingStep
           });
@@ -1587,8 +1759,8 @@
             }
           };
 
-          console.log("CB STEP: goal payload built", clarityGoalInput);
-          console.log("CB STEP: calling shared save pipeline", {
+          debugLog("CB STEP: goal payload built", clarityGoalInput);
+          debugLog("CB STEP: calling shared save pipeline", {
             goalId: clarityGoalInput.id || "(new)",
             title: clarityGoalInput.title
           });
@@ -1603,7 +1775,7 @@
         }
       }
 
-      finalizeClarityFlow(surface);
+      await finalizeClarityFlow(surface);
       return;
     }
 
@@ -1624,14 +1796,14 @@
       : [];
   }
 
-  function finalizeClarityFlow(surface) {
+  async function finalizeClarityFlow(surface) {
     appState.meta.onboardingCompleted = true;
     appState.meta.onboardingStep = CLARITY_STEPS.length - 1;
     syncRoadmap();
     saveState();
-    ensureMissionForToday(true);
+    await ensureMissionForToday(true);
     renderDashboard();
-    console.log("Dashboard updated");
+    debugLog("Dashboard updated");
     if (surface === "modal") {
       closeModal("profile-modal");
     } else {
@@ -2055,6 +2227,188 @@
     }) || {};
   }
 
+  function buildDailyMissionPayload(context) {
+    const primaryGoal = context.primaryGoal || getPrimaryGoal() || createGoalRecord({ profile: appState.profile });
+    const primaryProfile = getProfileForGoal(primaryGoal);
+    const currentMilestone = getCurrentMilestone(primaryProfile);
+    const recentPerformance = getRecentPerformanceSnapshot();
+    const latestUpdate = context.latestUpdate || appState.lifeUpdates[0] || null;
+    const recentMissionHistory = getRecentMissionHistoryForAI();
+    const currentExecutionPlan = getCurrentMilestoneExecutionPlan(primaryGoal, primaryProfile, currentMilestone);
+
+    return sanitizePlannerValue({
+      currentDate: activeDateKey,
+      whatMattersMostToday: context.daily?.priority || context.profile?.gap || context.profile?.phaseFocus,
+      currentState: {
+        state: context.daily?.state || "Neutral",
+        mode: context.daily?.mode || "stability",
+        coachResponse: context.daily?.coachResponse || "",
+        priority: context.daily?.priority || "",
+        mood: context.daily?.state || "",
+        energy: appState.userProfile?.energy || "",
+        latestEmotions: Array.isArray(latestUpdate?.emotions) ? latestUpdate.emotions : []
+      },
+      primaryGoal: {
+        title: primaryGoal.title || primaryProfile.goalTitle,
+        why: primaryGoal.why || primaryProfile.why,
+        baseline: primaryGoal.baseline || primaryProfile.baseline,
+        target: primaryProfile.target || primaryGoal.title || primaryProfile.goalTitle,
+        timeline: primaryGoal.timeline || primaryProfile.timeline,
+        category: primaryGoal.category || primaryProfile.category || inferGoalCategory(primaryGoal)
+      },
+      currentMilestone: currentMilestone ? {
+        label: currentMilestone.label,
+        detail: getMilestoneDetail(currentMilestone, primaryProfile),
+        isFinalGoal: Boolean(currentMilestone.isFinalGoal)
+      } : null,
+      baselineToMilestoneGap: primaryProfile.gap || primaryProfile.phaseFocus || "",
+      supportingGoals: context.supportingGoals.map((goal) => {
+        const goalProfile = getProfileForGoal(goal);
+        const supportingMilestone = getCurrentMilestone(goalProfile);
+        return {
+          title: goal.title || goalProfile.goalTitle,
+          why: goal.why || goalProfile.why,
+          baseline: goal.baseline || goalProfile.baseline,
+          milestone: supportingMilestone?.label || goal.milestone || goalProfile.phaseMilestone,
+          timeline: goal.timeline || goalProfile.timeline,
+          category: goal.category || goalProfile.category || inferGoalCategory(goal)
+        };
+      }),
+      recentStreak: {
+        currentStreak: appState.streak || 0,
+        recentCompletionRate: recentPerformance.completionRate,
+        recentWinRate: recentPerformance.winRate,
+        strongDays: recentPerformance.strongDays
+      },
+      roadmapProgress: {
+        currentMilestoneIndex: Number.isInteger(primaryProfile.currentMilestoneIndex) ? primaryProfile.currentMilestoneIndex + 1 : 1,
+        milestoneCount: getMilestones(primaryProfile).length
+      },
+      currentExecutionPlan,
+      recentMissionHistory,
+      profile: {
+        goalTitle: primaryProfile.goalTitle,
+        why: primaryProfile.why,
+        baseline: primaryProfile.baseline,
+        target: primaryProfile.target,
+        gap: primaryProfile.gap,
+        timeline: primaryProfile.timeline,
+        phaseName: primaryProfile.phaseName,
+        phaseFocus: primaryProfile.phaseFocus,
+        phaseMilestone: currentMilestone?.label || primaryProfile.phaseMilestone,
+        phaseWhy: getMilestoneDetail(currentMilestone, primaryProfile),
+        category: primaryProfile.category,
+        contextNotes: primaryProfile.contextNotes,
+        strengths: primaryProfile.strengths,
+        obstacles: primaryProfile.obstacles
+      },
+      userProfile: appState.userProfile || {},
+      latestLifeUpdate: latestUpdate
+    }) || {};
+  }
+
+  function getCurrentMilestoneExecutionPlan(goal = getPrimaryGoal(), profile = appState.profile, milestone = getCurrentMilestone(profile)) {
+    const executionPlanKey = getMilestoneExecutionPlanKey(goal, milestone, profile);
+    const storedPlan = normalizeMilestoneExecutionPlan(appState.milestoneExecutionPlans?.[executionPlanKey]);
+    if (!storedPlan) {
+      return null;
+    }
+
+    const milestoneStartedAt = storedPlan.milestone_started_at || activeDateKey;
+    return {
+      ...storedPlan,
+      milestone_started_at: milestoneStartedAt,
+      elapsed_days: getElapsedDaysForMilestone(milestoneStartedAt, activeDateKey)
+    };
+  }
+
+  function getMilestoneExecutionPlanKey(goal = getPrimaryGoal(), milestone = getCurrentMilestone(appState.profile), profile = appState.profile) {
+    const goalId = (goal?.id || appState.primaryGoalId || "primary").toString().trim();
+    const milestoneId = (milestone?.id || normalizeMilestoneText(milestone?.label || profile?.phaseMilestone || "current")).toString().trim();
+    const baseline = normalizeMilestoneText(goal?.baseline || profile?.baseline || "");
+    const target = normalizeMilestoneText(goal?.profile?.target || profile?.target || "");
+    return [goalId, milestoneId, baseline, target].join("|");
+  }
+
+  function getElapsedDaysForMilestone(startDateKey, currentDateKey = activeDateKey) {
+    if (!startDateKey || !currentDateKey) {
+      return 0;
+    }
+    const start = new Date(`${startDateKey}T12:00:00`);
+    const current = new Date(`${currentDateKey}T12:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(current.getTime())) {
+      return 0;
+    }
+    return Math.max(0, Math.round((current.getTime() - start.getTime()) / 86400000));
+  }
+
+  function saveCurrentMilestoneExecutionPlan(context, executionPlan) {
+    const primaryGoal = context.primaryGoal || getPrimaryGoal();
+    const primaryProfile = getProfileForGoal(primaryGoal);
+    const currentMilestone = getCurrentMilestone(primaryProfile);
+    const executionPlanKey = getMilestoneExecutionPlanKey(primaryGoal, currentMilestone, primaryProfile);
+    const existingPlan = normalizeMilestoneExecutionPlan(appState.milestoneExecutionPlans?.[executionPlanKey]);
+    const normalizedPlan = normalizeMilestoneExecutionPlan({
+      ...executionPlan,
+      milestone_started_at: existingPlan?.milestone_started_at || executionPlan?.milestone_started_at || activeDateKey,
+      elapsed_days: getElapsedDaysForMilestone(
+        existingPlan?.milestone_started_at || executionPlan?.milestone_started_at || activeDateKey,
+        activeDateKey
+      )
+    });
+
+    if (!normalizedPlan) {
+      return null;
+    }
+
+    appState.milestoneExecutionPlans[executionPlanKey] = normalizedPlan;
+    return normalizedPlan;
+  }
+
+  function clearExecutionPlansForGoal(goalId) {
+    const safeGoalId = (goalId || "").toString().trim();
+    if (!safeGoalId) {
+      return;
+    }
+
+    Object.keys(appState.milestoneExecutionPlans || {}).forEach((key) => {
+      if (key.startsWith(`${safeGoalId}|`)) {
+        delete appState.milestoneExecutionPlans[key];
+      }
+    });
+  }
+
+  function getRecentMissionHistoryForAI() {
+    const history = [];
+
+    for (let offset = 1; offset <= 4; offset += 1) {
+      const dateKey = offsetDateKey(activeDateKey, -offset);
+      const savedMission = normalizeMissionRecord(appState.missions[dateKey], dateKey);
+      if (!savedMission?.items?.length) {
+        continue;
+      }
+
+      history.push({
+        date: dateKey,
+        source: savedMission.source || "",
+        missionLoad: savedMission.missionLoad || "",
+        dailyFocus: savedMission.dailyFocus || "",
+        missions: savedMission.items.slice(0, 6).map((item) => ({
+          goalType: item.goalType || "",
+          goalTitle: item.goalTitle || "",
+          category: item.category || "",
+          title: item.title || item.text || "",
+          summary: item.summary || "",
+          subtasks: Array.isArray(item.subtasks)
+            ? item.subtasks.map((subtask) => subtask.text || "").filter(Boolean)
+            : []
+        }))
+      });
+    }
+
+    return history;
+  }
+
   async function requestRoadmapGeneration(payload) {
     if (window.location.protocol === "file:") {
       throw new Error("AI roadmap generation needs the local server running. Start the app with npm start or node server.js.");
@@ -2082,6 +2436,40 @@
     } catch (error) {
       if (error.name === "AbortError") {
         throw new Error("The AI roadmap planner timed out.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  async function requestDailyMissionPlan(payload) {
+    if (window.location.protocol === "file:") {
+      throw new Error("AI mission planning needs the local server running. Start the app with npm start or node server.js.");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 24000);
+
+    try {
+      const response = await window.fetch(AI_MISSION_ROUTE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.details || "Unable to generate today's mission.");
+      }
+
+      return data;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("The AI mission engine timed out.");
       }
       throw error;
     } finally {
@@ -2224,7 +2612,7 @@
     openModal("milestone-next-modal");
 
     try {
-      console.log("AI roadmap request started", {
+      debugLog("AI roadmap request started", {
         goalId: flowState.pendingRoadmapApproval.goalId
       });
       const roadmapResponse = await requestRoadmapGeneration(
@@ -2235,7 +2623,7 @@
         return;
       }
 
-      console.log("CB STEP: AI roadmap response received", roadmapResponse);
+      debugLog("CB STEP: AI roadmap response received", roadmapResponse);
       const roadmap = normalizeGeneratedRoadmap(roadmapResponse, flowState.pendingRoadmapApproval.goalId);
       if (!Array.isArray(roadmapResponse?.milestones) || !roadmap.length) {
         console.error("invalid roadmap response", {
@@ -2260,14 +2648,14 @@
     }
   }
 
-  function acceptRoadmapApproval() {
+  async function acceptRoadmapApproval() {
     const approval = flowState.pendingRoadmapApproval;
     if (!approval?.roadmap?.length) {
       return;
     }
 
     saveGoalRoadmapState(approval.goalId, approval.roadmap);
-    console.log("CB STEP: roadmap saved to goal", {
+    debugLog("CB STEP: roadmap saved to goal", {
       goalId: approval.goalId,
       milestoneCount: approval.roadmap.length
     });
@@ -2276,11 +2664,11 @@
     closeModal("milestone-next-modal");
 
     if (approval.originSurface === "onboarding" || approval.originSurface === "modal") {
-      console.log("CB STEP: dashboard render after roadmap save");
-      finalizeClarityFlow(approval.originSurface);
+      debugLog("CB STEP: dashboard render after roadmap save");
+      await finalizeClarityFlow(approval.originSurface);
     } else {
       renderDashboard();
-      console.log("CB STEP: dashboard render after roadmap save");
+      debugLog("CB STEP: dashboard render after roadmap save");
     }
   }
 
@@ -2408,6 +2796,7 @@
     goal.roadmap = goalProfile.roadmap;
     goal.currentMilestoneIndex = goalProfile.currentMilestoneIndex;
     goal.profile = goalProfile;
+    clearExecutionPlansForGoal(goal.id);
 
     if (goal.isPrimary) {
       appState.profile = {
@@ -2443,6 +2832,7 @@
     goal.roadmapConfirmed = true;
     goal.currentMilestoneIndex = getCurrentMilestoneIndexFromRoadmap(roadmap);
     goal.milestone = currentMilestone?.label || "";
+    clearExecutionPlansForGoal(goal.id);
     goal.profile = {
       ...goalProfile,
       roadmap,
@@ -2630,6 +3020,8 @@
       return;
     }
 
+    clearExecutionPlansForGoal(completedGoal.id);
+
     const archiveKey = getGoalArchiveKey(completedGoal);
     const archiveMap = new Map(appState.completedGoals.map((goal) => [getGoalArchiveKey(goal), goal]));
     archiveMap.set(archiveKey, completedGoal);
@@ -2705,7 +3097,7 @@
     modal.classList.add("is-entering");
   }
 
-  function completePrimaryGoal(finalMilestones) {
+  async function completePrimaryGoal(finalMilestones) {
     const completedAt = getActiveDateTimestamp();
     const archivedGoal = buildArchivedPrimaryGoal(completedAt, finalMilestones);
     if (!archivedGoal) {
@@ -2713,7 +3105,7 @@
     }
 
     archiveCompletedPrimaryGoal(archivedGoal);
-    ensureMissionForToday(true);
+    await ensureMissionForToday(true);
     saveState();
     renderDashboard();
     showTimelineFeedback(TIMELINE_GOAL_COMPLETE_MESSAGE.title, TIMELINE_GOAL_COMPLETE_MESSAGE.body);
@@ -2721,7 +3113,15 @@
   }
 
   // Complete the current stored roadmap item and advance to the next saved milestone without re-calling AI.
-  function completeCurrentMilestone() {
+  async function completeCurrentMilestone() {
+    await applyCurrentMilestoneCompletion({
+      skipConfirm: false,
+      feedbackTitle: "Milestone complete.",
+      feedbackBody: "The next roadmap step is now active."
+    });
+  }
+
+  async function applyCurrentMilestoneCompletion(options = {}) {
     syncMilestoneTimeline();
     const profile = appState.profile;
     const milestones = getMilestones(profile).map((milestone) => ({ ...milestone }));
@@ -2730,7 +3130,7 @@
       return;
     }
 
-    if (!window.confirm("Complete this milestone?")) {
+    if (!options.skipConfirm && !window.confirm("Complete this milestone?")) {
       return;
     }
 
@@ -2745,7 +3145,7 @@
     const completedMilestone = milestones[currentIndex];
 
     if (isFinalMilestone) {
-      completePrimaryGoal(milestones);
+      await completePrimaryGoal(milestones);
       return;
     }
 
@@ -2759,11 +3159,16 @@
     profile.goalCompletedAt = "";
 
     syncPrimaryGoalFromProfile();
+    clearExecutionPlansForGoal(appState.primaryGoalId);
+    await ensureMissionForToday(true);
     saveState();
     renderDashboard();
     renderTimeline();
     pulseElement(elements.timelineCompleteBtn.closest(".timeline-detail"), "timeline-complete-pop");
-    showTimelineFeedback("Milestone complete.", "The next roadmap step is now active.");
+    showTimelineFeedback(
+      options.feedbackTitle || "Milestone complete.",
+      options.feedbackBody || "The next roadmap step is now active."
+    );
   }
 
   async function openMilestoneAdvancePrompt(options = {}) {
@@ -2819,9 +3224,9 @@
     }
   }
 
-  function acceptSuggestedMilestone() {
+  async function acceptSuggestedMilestone() {
     if (flowState.pendingRoadmapApproval) {
-      acceptRoadmapApproval();
+      await acceptRoadmapApproval();
       return;
     }
     const suggestion = flowState.pendingMilestoneAdvance?.suggestion;
@@ -2830,10 +3235,10 @@
       return;
     }
 
-    applyApprovedMilestone(suggestion);
+    await applyApprovedMilestone(suggestion);
   }
 
-  function moveToFinalGoalTarget() {
+  async function moveToFinalGoalTarget() {
     const pendingAdvance = flowState.pendingMilestoneAdvance;
     const targetGoal = getMilestoneFlowGoal(pendingAdvance?.goalId);
     const targetProfile = pendingAdvance?.goalId ? getProfileForGoal(targetGoal) : appState.profile;
@@ -2861,7 +3266,7 @@
     flowState.pendingMilestoneAdvance = null;
     closeModal("milestone-next-modal");
     if (pendingAdvance?.mode === "initial" && (pendingAdvance.originSurface === "onboarding" || pendingAdvance.originSurface === "modal")) {
-      finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
+      await finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
     } else {
       renderDashboard();
       renderTimeline();
@@ -2869,7 +3274,7 @@
     showTimelineFeedback("Path updated.", "Final goal is now the active target.");
   }
 
-  function saveNextMilestoneFromPrompt(event) {
+  async function saveNextMilestoneFromPrompt(event) {
     event.preventDefault();
     const title = elements.milestoneNextTitleInput.value.trim();
     const why = elements.milestoneNextWhyInput.value.trim();
@@ -2878,10 +3283,10 @@
       return;
     }
 
-    applyApprovedMilestone({ title, why });
+    await applyApprovedMilestone({ title, why });
   }
 
-  function applyApprovedMilestone(suggestion) {
+  async function applyApprovedMilestone(suggestion) {
     const pendingAdvance = flowState.pendingMilestoneAdvance;
     if (!pendingAdvance) {
       return;
@@ -2899,7 +3304,7 @@
     }
 
     if (isSameMilestoneText(title, finalMilestone?.label)) {
-      moveToFinalGoalTarget();
+      await moveToFinalGoalTarget();
       return;
     }
 
@@ -2933,7 +3338,7 @@
     flowState.pendingMilestoneAdvance = null;
     closeModal("milestone-next-modal");
     if (pendingAdvance.mode === "initial" && (pendingAdvance.originSurface === "onboarding" || pendingAdvance.originSurface === "modal")) {
-      finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
+      await finalizeClarityFlow(pendingAdvance.originSurface || "onboarding");
       showTimelineFeedback("Path set.", "Your first real milestone is now active.");
     } else {
       renderDashboard();
@@ -2995,26 +3400,212 @@
     return { profile, daily, latestUpdate, infoScore, lowInfo, primaryGoal, supportingGoals };
   }
 
-  function ensureMissionForToday(forceRegenerate) {
+  // Daily missions are AI-first in V5.3. We only touch the legacy planner when the AI path fails.
+  async function ensureMissionForToday(forceRegenerate) {
     if (!appState.daily[activeDateKey]) {
-      return;
+      return null;
     }
 
-    if (!forceRegenerate && appState.missions[activeDateKey]?.items?.length) {
-      return;
+    const savedAIMission = getSavedMissionForDate(activeDateKey);
+    if (!forceRegenerate && savedAIMission) {
+      appState.missions[activeDateKey] = savedAIMission;
+      saveState();
+      return savedAIMission;
+    }
+
+    const existingMission = normalizeMissionRecord(appState.missions[activeDateKey], activeDateKey);
+    if (!forceRegenerate && existingMission?.items?.length) {
+      appState.missions[activeDateKey] = existingMission;
+      saveState();
+      return existingMission;
     }
 
     const context = getTodayContext();
-    const plan = generateMissionPlan(context);
-    appState.missions[activeDateKey] = {
-      title: plan.title,
-      subtitle: plan.subtitle,
-      loadLevel: plan.loadLevel,
-      items: plan.items,
+    setMissionPlanningState(true);
+    let plan = null;
+
+    try {
+      plan = await generateAIMissionPlan(context);
+    } catch (error) {
+      if (savedAIMission) {
+        console.error("AI mission refresh failed. Keeping the saved AI mission for today.", error);
+        appState.missions[activeDateKey] = savedAIMission;
+        saveState();
+        setMissionPlanningState(false, savedAIMission);
+        return savedAIMission;
+      }
+
+      debugLog("MISSION LOAD: fallback activated", {
+        date: activeDateKey,
+        reason: error.message
+      });
+      console.error("AI mission planning failed. Falling back to local mission logic.", error);
+      plan = buildFallbackMissionPlan(context, error);
+    }
+
+    const savedExecutionPlan = plan.executionPlan
+      ? saveCurrentMilestoneExecutionPlan(context, plan.executionPlan)
+      : getCurrentMilestoneExecutionPlan(context.primaryGoal, context.profile, getCurrentMilestone(context.profile));
+
+    appState.missions[activeDateKey] = normalizeMissionRecord({
+      ...plan,
+      executionPlan: savedExecutionPlan,
       generatedAt: new Date().toISOString()
-    };
+    }, activeDateKey);
+    if (appState.missions[activeDateKey].source === "ai") {
+      debugLog("MISSION LOAD: AI mission saved", {
+        date: activeDateKey,
+        selectedSupportingGoals: appState.missions[activeDateKey].selectedSupportingGoals
+      });
+    }
     syncDailyPerformanceFromMission();
     saveState();
+    setMissionPlanningState(false, appState.missions[activeDateKey]);
+    return appState.missions[activeDateKey];
+  }
+
+  async function generateAIMissionPlan(context) {
+    const payload = buildDailyMissionPayload(context);
+    debugLog("MISSION LOAD: AI request started", {
+      date: activeDateKey,
+      hasSupportingGoals: context.supportingGoals.length
+    });
+    const response = await requestDailyMissionPlan(payload);
+    debugLog("MISSION LOAD: AI response received", {
+      date: activeDateKey,
+      missionCount: Array.isArray(response?.missions) ? response.missions.length : 0
+    });
+    return normalizeAIMissionPlan(response, context);
+  }
+
+  function normalizeAIMissionPlan(plan, context) {
+    const currentMilestone = getCurrentMilestone(context.profile);
+    const selectedSupportingGoals = Array.from(new Set(
+      (Array.isArray(plan.missions) ? plan.missions : [])
+        .filter((mission) => (mission?.goal_type || "").toString().trim() === "supporting")
+        .map((mission) => (mission?.goal_title || "").toString().trim())
+        .filter(Boolean)
+    ));
+    const executionPlan = normalizeMilestoneExecutionPlan(plan.execution_plan);
+
+    return {
+      title: (plan.daily_focus || "AI planned day").toString().trim(),
+      subtitle: currentMilestone?.label
+        ? `Current milestone: ${currentMilestone.label}`
+        : "Current milestone anchored plan",
+      dailyFocus: (plan.daily_focus || "").toString().trim(),
+      loadLevel: formatMissionLoadLabel(plan.mission_load),
+      missionLoad: (plan.mission_load || "standard").toString().trim().toLowerCase(),
+      source: "ai",
+      sourceLabel: "AI planned",
+      planStatus: "ai",
+      selectedSupportingGoals,
+      milestoneEstimate: (plan.milestone_estimate || "").toString().trim(),
+      milestoneEstimateDays: Number(plan.milestone_estimate_days) || null,
+      executionPlan,
+      aiPlan: {
+        daily_focus: (plan.daily_focus || "").toString().trim(),
+        mission_load: (plan.mission_load || "standard").toString().trim().toLowerCase(),
+        selected_supporting_goals: selectedSupportingGoals,
+        execution_plan: executionPlan,
+        missions: Array.isArray(plan.missions) ? plan.missions.map((mission) => ({
+          goal_type: (mission?.goal_type || "").toString().trim(),
+          goal_title: (mission?.goal_title || "").toString().trim(),
+          title: (mission?.title || "").toString().trim(),
+          summary: (mission?.summary || "").toString().trim(),
+          completes_milestone: Boolean(mission?.completes_milestone),
+          subtasks: Array.isArray(mission?.subtasks)
+            ? mission.subtasks.map((subtask) => (subtask || "").toString().trim()).filter(Boolean)
+            : []
+        })) : [],
+        milestone_estimate: (plan.milestone_estimate || "").toString().trim(),
+        milestone_estimate_days: Number(plan.milestone_estimate_days) || null,
+        status: "ai"
+      },
+      items: (Array.isArray(plan.missions) ? plan.missions : []).map((mission, index) => normalizeMissionItem({
+        id: `${activeDateKey}-${index + 1}`,
+        title: mission.title,
+        text: mission.title,
+        summary: mission.summary,
+        category: getMissionCategoryKey(mission),
+        completed: false,
+        goalType: mission.goal_type,
+        goalTitle: mission.goal_title,
+        completesMilestone: Boolean(mission.completes_milestone),
+        expanded: false,
+        subtasks: Array.isArray(mission.subtasks)
+          ? mission.subtasks.map((subtask, subtaskIndex) => ({
+            id: `${activeDateKey}-${index + 1}-subtask-${subtaskIndex + 1}`,
+            text: subtask,
+            completed: false
+          }))
+          : []
+      }, `${activeDateKey}-${index + 1}`))
+    };
+  }
+
+  function buildFallbackMissionPlan(context, error) {
+    const plan = generateMissionPlan(context);
+    return {
+      ...plan,
+      source: "fallback",
+      sourceLabel: "Fallback mode",
+      planStatus: "fallback",
+      selectedSupportingGoals: [],
+      aiPlan: null,
+      executionPlan: getCurrentMilestoneExecutionPlan(context.primaryGoal, context.profile, getCurrentMilestone(context.profile)),
+      missionLoad: (plan.loadLevel || "Standard").toLowerCase(),
+      dailyFocus: plan.title,
+      milestoneEstimate: getFallbackMilestoneEstimate(context.profile),
+      milestoneEstimateDays: null,
+      subtitle: error?.message ? `${plan.subtitle} Fallback mode is active.` : plan.subtitle
+    };
+  }
+
+  function setMissionPlanningState(isPlanning, mission = null) {
+    if (!elements.regenerateMissionBtn) {
+      return;
+    }
+
+    elements.regenerateMissionBtn.disabled = isPlanning;
+    elements.regenerateMissionBtn.textContent = isPlanning ? "Planning..." : "Refresh Mission";
+
+    if (!isPlanning || !elements.missionPlanStatus) {
+      return;
+    }
+
+    elements.missionPlanStatus.textContent = "Planning with AI...";
+    elements.missionLoadChip.classList.add("hidden");
+    elements.missionEstimateChip.classList.add("hidden");
+  }
+
+  // Keep one saved mission record per app date, and prefer a valid saved AI plan for the whole day.
+  function getSavedMissionForDate(dateKey = activeDateKey) {
+    debugLog("MISSION LOAD: checking saved mission for date", dateKey);
+    const savedMission = normalizeMissionRecord(appState.missions[dateKey], dateKey);
+
+    if (isValidSavedAIMission(savedMission)) {
+      debugLog("MISSION LOAD: using saved AI mission", dateKey);
+      return savedMission;
+    }
+
+    debugLog("MISSION LOAD: no saved AI mission found", dateKey);
+    return null;
+  }
+
+  function isValidSavedAIMission(mission) {
+    if (!mission || mission.source !== "ai") {
+      return false;
+    }
+
+    if (!mission.dailyFocus || !Array.isArray(mission.items) || !mission.items.length) {
+      return false;
+    }
+
+    return mission.items.every((item) => {
+      const title = (item?.title || item?.text || "").toString().trim();
+      return Boolean(title);
+    });
   }
 
   function generateMissionPlan(context) {
@@ -3027,12 +3618,23 @@
       title: getMissionTitle(context),
       subtitle: `Today's focus: ${focus}`,
       loadLevel: loadProfile.level,
+      missionLoad: loadProfile.level.toLowerCase(),
       items: tasks.map((item, index) => ({
         id: `${activeDateKey}-${index + 1}`,
+        title: item.text,
         text: item.text,
+        summary: "",
         category: item.category,
         completed: false,
-        role: item.role
+        role: item.role,
+        goalType: item.role === "main" ? "primary" : item.category === "reset" ? "reset" : "supporting",
+        goalTitle: item.role === "main"
+          ? (context.primaryGoal?.title || context.profile.goalTitle || "Primary goal")
+          : item.category === "reset"
+            ? "Reset"
+            : context.supportingGoals.find((goal) => inferGoalCategory(goal) === getMissionCategoryKey(item))?.title || "Supporting goal",
+        expanded: false,
+        subtasks: []
       }))
     };
   }
@@ -3557,7 +4159,8 @@
 
   function renderDashboard() {
     const { profile, daily } = getTodayContext();
-    const mission = appState.missions[activeDateKey] || { title: "", subtitle: "", items: [] };
+    const mission = normalizeMissionRecord(appState.missions[activeDateKey], activeDateKey);
+    appState.missions[activeDateKey] = mission;
     const hasActiveGoal = hasActiveGoalProfile(profile) || Boolean(getPrimaryGoal());
     if (hasActiveGoal) {
       syncMilestoneTimeline();
@@ -3612,8 +4215,9 @@
     renderGoalsList();
     updateCompletedGoalsButton();
     renderRoadmap(profile);
-    elements.missionTitle.textContent = mission.title;
+    elements.missionTitle.textContent = mission.dailyFocus || mission.title || "Small moves still count.";
     elements.missionSubtitle.textContent = mission.subtitle;
+    renderMissionMeta(mission);
     renderMissionItems(mission.items);
     renderMissionCompletionState(mission);
 
@@ -3802,46 +4406,143 @@
     return `Why this matters: ${milestone.toLowerCase()} gives you a clear next target.`;
   }
 
+  function renderMissionMeta(mission) {
+    const sourceLabel = mission?.sourceLabel || (mission?.source === "ai" ? "AI planned" : "Fallback mode");
+    elements.missionPlanStatus.textContent = sourceLabel || "Fallback mode";
+
+    const loadLabel = mission?.missionLoad ? `Load: ${formatMissionLoadLabel(mission.missionLoad)}` : "";
+    const estimateLabel = getMissionEstimateLabel(mission);
+
+    elements.missionLoadChip.textContent = loadLabel;
+    elements.missionLoadChip.classList.toggle("hidden", !loadLabel);
+    elements.missionEstimateChip.textContent = estimateLabel;
+    elements.missionEstimateChip.classList.toggle("hidden", !estimateLabel);
+  }
+
   function renderMissionItems(items) {
     elements.missionList.innerHTML = "";
-    items.forEach((item, index) => {
+    const normalizedItems = (Array.isArray(items) ? items : []).map((item, index) =>
+      normalizeMissionItem(item, `${activeDateKey}-${index + 1}`)
+    );
+
+    normalizedItems.forEach((item, index) => {
       const wrapper = document.createElement("div");
-      wrapper.className = `mission-item ${item.completed ? "is-complete" : ""}`;
-      wrapper.innerHTML = `
-        <input class="mission-check" type="checkbox" ${item.completed ? "checked" : ""} aria-label="Mark mission item complete">
-        <div class="mission-meta">
-          <span class="mission-tag">${item.category}</span>
-          <textarea rows="3">${item.text}</textarea>
-        </div>
-        <span class="mission-encouragement hidden"></span>
-      `;
+      const hasSubtasks = item.subtasks.length > 0;
+      wrapper.className = `mission-item ${item.completed ? "is-complete" : ""} ${hasSubtasks ? "has-subtasks" : ""} ${item.expanded ? "is-expanded" : ""}`.trim();
+      wrapper.innerHTML = hasSubtasks
+        ? `
+          <input class="mission-check" type="checkbox" ${item.completed ? "checked" : ""} aria-label="Mark mission complete">
+          <div class="mission-meta">
+            <div class="mission-topline">
+              <span class="mission-tag">${escapeHtml(formatMissionTag(item))}</span>
+              ${item.goalTitle ? `<span class="mission-goal-title">${escapeHtml(item.goalTitle)}</span>` : ""}
+            </div>
+            <button class="mission-toggle" type="button" aria-expanded="${item.expanded ? "true" : "false"}">
+              <strong>${escapeHtml(item.title || item.text || "Mission")}</strong>
+              ${item.summary ? `<p class="mission-summary">${escapeHtml(item.summary)}</p>` : ""}
+              <span class="mission-toggle-text">${item.expanded ? "Hide subtasks" : `Show subtasks (${item.subtasks.length})`}</span>
+            </button>
+            <div class="mission-subtasks-shell">
+              <div class="mission-subtasks">
+                <div class="mission-subtasks-list"></div>
+              </div>
+            </div>
+          </div>
+          <span class="mission-encouragement hidden"></span>
+        `
+        : `
+          <input class="mission-check" type="checkbox" ${item.completed ? "checked" : ""} aria-label="Mark mission complete">
+          <div class="mission-meta">
+            <div class="mission-topline">
+              <span class="mission-tag">${escapeHtml(formatMissionTag(item))}</span>
+              ${item.goalTitle ? `<span class="mission-goal-title">${escapeHtml(item.goalTitle)}</span>` : ""}
+            </div>
+            <div class="mission-copy">
+              <strong>${escapeHtml(item.title || item.text || "Mission")}</strong>
+              ${item.summary ? `<p class="mission-summary">${escapeHtml(item.summary)}</p>` : ""}
+            </div>
+          </div>
+          <span class="mission-encouragement hidden"></span>
+        `;
 
       const checkbox = wrapper.querySelector(".mission-check");
-      const textarea = wrapper.querySelector("textarea");
       const encouragement = wrapper.querySelector(".mission-encouragement");
 
-      checkbox.addEventListener("change", () => {
-        appState.missions[activeDateKey].items[index].completed = checkbox.checked;
+      checkbox.addEventListener("change", async () => {
+        const mission = appState.missions[activeDateKey];
+        mission.items[index].completed = checkbox.checked;
+        if (Array.isArray(mission.items[index].subtasks) && mission.items[index].subtasks.length) {
+          mission.items[index].subtasks = mission.items[index].subtasks.map((subtask) => ({
+            ...subtask,
+            completed: checkbox.checked
+          }));
+        }
         wrapper.classList.toggle("is-complete", checkbox.checked);
         saveState();
         syncDailyPerformanceFromMission();
         if (checkbox.checked) {
           triggerTaskCompletionFeedback(wrapper, encouragement);
         }
+        if (await maybeAutoCompleteMilestoneFromMission(mission.items[index])) {
+          return;
+        }
+        renderMissionItems(mission.items);
         renderMissionCompletionState(appState.missions[activeDateKey]);
       });
 
-      textarea.addEventListener("input", () => {
-        appState.missions[activeDateKey].items[index].text = textarea.value;
-        saveState();
-      });
+      if (hasSubtasks) {
+        const toggle = wrapper.querySelector(".mission-toggle");
+        const list = wrapper.querySelector(".mission-subtasks-list");
+
+        toggle.addEventListener("click", () => {
+          const mission = appState.missions[activeDateKey];
+          const nextExpanded = !mission.items[index].expanded;
+          mission.items[index].expanded = nextExpanded;
+          saveState();
+          wrapper.classList.toggle("is-expanded", nextExpanded);
+          toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+          const toggleText = toggle.querySelector(".mission-toggle-text");
+          if (toggleText) {
+            toggleText.textContent = nextExpanded ? "Hide subtasks" : `Show subtasks (${mission.items[index].subtasks.length})`;
+          }
+        });
+
+        item.subtasks.forEach((subtask, subtaskIndex) => {
+          const subtaskRow = document.createElement("label");
+          subtaskRow.className = `mission-subtask ${subtask.completed ? "is-complete" : ""}`;
+          subtaskRow.innerHTML = `
+            <input class="mission-subtask-check" type="checkbox" ${subtask.completed ? "checked" : ""} aria-label="Mark subtask complete">
+            <span class="mission-subtask-text">${escapeHtml(subtask.text)}</span>
+          `;
+
+          const subtaskCheck = subtaskRow.querySelector(".mission-subtask-check");
+          subtaskCheck.addEventListener("change", async () => {
+            const mission = appState.missions[activeDateKey];
+            const activeItem = mission.items[index];
+            activeItem.subtasks[subtaskIndex].completed = subtaskCheck.checked;
+            activeItem.completed = activeItem.subtasks.every((entry) => entry.completed);
+            saveState();
+            syncDailyPerformanceFromMission();
+            if (subtaskCheck.checked) {
+              triggerTaskCompletionFeedback(wrapper, encouragement);
+            }
+            if (await maybeAutoCompleteMilestoneFromMission(activeItem)) {
+              return;
+            }
+            renderMissionItems(mission.items);
+            renderMissionCompletionState(mission);
+          });
+
+          list.appendChild(subtaskRow);
+        });
+      }
 
       elements.missionList.appendChild(wrapper);
     });
   }
 
   function renderMissionCompletionState(mission) {
-    const items = mission?.items || [];
+    const items = (mission?.items || []).map((item, index) => normalizeMissionItem(item, `${activeDateKey}-${index + 1}`));
     const completedCount = items.filter((item) => item.completed).length;
     const isComplete = items.length > 0 && completedCount === items.length;
     const wasComplete = elements.missionCard.classList.contains("mission-complete");
@@ -3856,6 +4557,72 @@
     } else {
       elements.missionFeedback.innerHTML = "";
     }
+  }
+
+  async function maybeAutoCompleteMilestoneFromMission(item) {
+    if (!item?.completed || !item?.completesMilestone) {
+      return false;
+    }
+
+    await applyCurrentMilestoneCompletion({
+      skipConfirm: true,
+      feedbackTitle: "Milestone complete.",
+      feedbackBody: "AI marked this mission as a valid milestone finish."
+    });
+    return true;
+  }
+
+  function getMissionCategoryKey(item) {
+    if ((item?.goalType || item?.goal_type) === "reset") {
+      return "reset";
+    }
+    if (item?.category) {
+      const raw = item.category.toString().trim().toLowerCase();
+      if (raw.includes("health")) return "health";
+      if (raw.includes("family")) return "family";
+      if (raw.includes("money") || raw.includes("finance") || raw.includes("work")) return "money";
+      if (raw.includes("growth") || raw.includes("personal")) return "growth";
+      if (raw.includes("reset")) return "reset";
+      return raw;
+    }
+    return inferGoalCategory({ title: item?.goalTitle || item?.goal_title || item?.title || item?.text || "" });
+  }
+
+  function formatMissionTag(item) {
+    const category = getMissionCategoryKey(item);
+    if (category === "reset") {
+      return "Reset";
+    }
+    return formatGoalCategory(category);
+  }
+
+  function formatMissionLoadLabel(value) {
+    const labels = {
+      light: "Light",
+      standard: "Standard",
+      heavy: "Heavy",
+      peak: "Heavy"
+    };
+    return labels[(value || "").toString().trim().toLowerCase()] || "Standard";
+  }
+
+  function getMissionEstimateLabel(mission) {
+    const estimate = mission?.milestoneEstimate || "";
+    if (estimate) {
+      return `Milestone estimate: ${estimate}`;
+    }
+    if (Number.isFinite(mission?.milestoneEstimateDays)) {
+      return `Milestone estimate: ${mission.milestoneEstimateDays} days`;
+    }
+    return "";
+  }
+
+  function getFallbackMilestoneEstimate(profile) {
+    if (profile?.timeline) {
+      return profile.timeline;
+    }
+    const milestoneCount = getMilestones(profile).length || 1;
+    return `${Math.max(milestoneCount * 7, 7)} to ${Math.max(milestoneCount * 14, 14)} days`;
   }
 
   function triggerTaskCompletionFeedback(wrapper, encouragement) {

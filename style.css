@@ -809,6 +809,10 @@ textarea::placeholder {
   transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease, background 220ms ease, opacity 220ms ease;
 }
 
+.mission-item.has-subtasks {
+  align-items: stretch;
+}
+
 .mission-check {
   width: 26px;
   height: 26px;
@@ -854,6 +858,112 @@ textarea::placeholder {
 .mission-meta {
   display: grid;
   gap: 8px;
+}
+
+.mission-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mission-goal-title {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.mission-copy {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mission-copy strong,
+.mission-toggle strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.mission-summary {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.mission-toggle {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-toggle:hover .mission-toggle-text,
+.mission-toggle:focus-visible .mission-toggle-text {
+  color: var(--text);
+}
+
+.mission-toggle-text {
+  color: var(--accent-strong);
+  font-size: 0.84rem;
+  transition: color 180ms ease;
+}
+
+.mission-subtasks-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.mission-item.is-expanded .mission-subtasks-shell {
+  grid-template-rows: 1fr;
+}
+
+.mission-subtasks {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mission-subtasks-list {
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.35rem;
+}
+
+.mission-subtask {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 0.72rem 0.8rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.032);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mission-subtask.is-complete {
+  border-color: rgba(157, 255, 227, 0.18);
+  background: rgba(157, 255, 227, 0.04);
+}
+
+.mission-subtask-check {
+  width: 20px;
+  height: 20px;
+  margin-top: 0.06rem;
+  accent-color: #8be8d0;
+}
+
+.mission-subtask-text {
+  color: #eef5ff;
+  line-height: 1.45;
+}
+
+.mission-subtask.is-complete .mission-subtask-text {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .mission-tag {
@@ -920,6 +1030,28 @@ textarea::placeholder {
 .mission-card {
   position: relative;
   overflow: hidden;
+}
+
+.mission-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0.2rem;
+}
+
+.mission-plan-status {
+  font-size: 0.86rem;
+}
+
+.mission-inline-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.34rem 0.62rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #eef5ff;
+  font-size: 0.78rem;
 }
 
 .mission-card::after {
